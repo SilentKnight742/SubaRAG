@@ -7,8 +7,12 @@ name = "subarag-backend"
 version = "0.1.0"
 description = "Provider-neutral services for SubaRAG"
 requires-python = ">=3.11"
+dependencies = ["httpx>=0.28,<1"]
 
 [tool.pytest.ini_options]
 addopts = "-q -p no:cacheprovider"
 pythonpath = ["src"]
 testpaths = ["tests"]
+
+[tool.setuptools.packages.find]
+where = ["src"]

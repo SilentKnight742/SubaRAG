@@ -122,7 +122,11 @@ def test_service_enforces_provider_duration_limit_before_upload() -> None:
         response=ProviderTranscript(text="text"),
         capabilities=TranscriptionCapabilities(max_audio_seconds=30, supports_realtime=True),
     )
-    service = TranscriptionService([sarvam], default_provider="sarvam")
+    service = TranscriptionService(
+        [sarvam],
+        default_provider="sarvam",
+        max_audio_seconds=None,
+    )
     request = TranscriptionRequest(
         audio=AudioPayload(
             content=b"voice-data",
@@ -136,3 +140,58 @@ def test_service_enforces_provider_duration_limit_before_upload() -> None:
 
     assert exc_info.value.code == "audio_too_long"
     assert sarvam.requests == []
+
+
+def test_service_enforces_product_duration_limit_for_every_provider() -> None:
+    elevenlabs = FakeProvider(
+        name="elevenlabs",
+        response=ProviderTranscript(text="text"),
+        capabilities=TranscriptionCapabilities(max_audio_seconds=10 * 60 * 60),
+    )
+    service = TranscriptionService([elevenlabs], default_provider="elevenlabs")
+    request = TranscriptionRequest(
+        audio=AudioPayload(
+            content=b"voice-data",
+            content_type="audio/webm",
+            duration_seconds=30.1,
+        )
+    )
+
+    with pytest.raises(TranscriptionProviderError, match="SubaRAG limit") as exc_info:
+        asyncio.run(service.transcribe(request))
+
+    assert exc_info.value.code == "audio_too_long"
+    assert elevenlabs.requests == []
+
+
+def test_service_rejects_missing_measured_duration_before_upload() -> None:
+    elevenlabs = FakeProvider(
+        name="elevenlabs",
+        response=ProviderTranscript(text="text"),
+        capabilities=TranscriptionCapabilities(max_audio_seconds=10 * 60 * 60),
+    )
+    service = TranscriptionService([elevenlabs], default_provider="elevenlabs")
+    request = TranscriptionRequest(
+        audio=AudioPayload(
+            content=b"voice-data",
+            content_type="audio/webm",
+        )
+    )
+
+    with pytest.raises(TranscriptionProviderError, match="duration is required") as exc_info:
+        asyncio.run(service.transcribe(request))
+
+    assert exc_info.value.code == "duration_required"
+    assert elevenlabs.requests == []
+
+
+@pytest.mark.parametrize("max_audio_seconds", [0, -1])
+def test_service_rejects_invalid_product_duration_limit(max_audio_seconds: float) -> None:
+    provider = FakeProvider(name="sarvam", response=ProviderTranscript(text="text"))
+
+    with pytest.raises(ValueError, match="greater than zero"):
+        TranscriptionService(
+            [provider],
+            default_provider="sarvam",
+            max_audio_seconds=max_audio_seconds,
+        )

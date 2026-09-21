@@ -14,12 +14,19 @@ from .models import (
     TranscriptionResult,
 )
 from .provider import TranscriptionProvider
+from .providers import (
+    ElevenLabsTranscriptionProvider,
+    SarvamTranscriptionProvider,
+    create_transcription_http_client,
+)
 from .service import TranscriptionService
 
 __all__ = [
     "AudioPayload",
     "DuplicateTranscriptionProviderError",
+    "ElevenLabsTranscriptionProvider",
     "ProviderTranscript",
+    "SarvamTranscriptionProvider",
     "TranscriptSegment",
     "TranscriptionCapabilities",
     "TranscriptionProvider",
@@ -28,4 +35,5 @@ __all__ = [
     "TranscriptionResult",
     "TranscriptionService",
     "UnknownTranscriptionProviderError",
+    "create_transcription_http_client",
 ]

@@ -25,7 +25,11 @@ class TranscriptionService:
         providers: Iterable[TranscriptionProvider],
         *,
         default_provider: str,
+        max_audio_seconds: float | None = 30,
     ) -> None:
+        if max_audio_seconds is not None and max_audio_seconds <= 0:
+            raise ValueError("Maximum audio duration must be greater than zero.")
+
         self._providers: dict[str, TranscriptionProvider] = {}
 
         for provider in providers:
@@ -41,6 +45,7 @@ class TranscriptionService:
             raise UnknownTranscriptionProviderError(
                 f"Default transcription provider is not registered: {self._default_provider}"
             )
+        self._max_audio_seconds = max_audio_seconds
 
     @property
     def available_providers(self) -> tuple[str, ...]:
@@ -62,10 +67,29 @@ class TranscriptionService:
             )
 
         duration_seconds = request.audio.duration_seconds
+        if duration_seconds is None:
+            raise TranscriptionProviderError(
+                provider_name,
+                "Measured audio duration is required before transcription.",
+                code="duration_required",
+            )
+
+        if (
+            self._max_audio_seconds is not None
+            and duration_seconds > self._max_audio_seconds
+        ):
+            raise TranscriptionProviderError(
+                provider_name,
+                (
+                    f"Audio duration {duration_seconds:.1f}s exceeds the "
+                    f"SubaRAG limit of {self._max_audio_seconds:.1f}s."
+                ),
+                code="audio_too_long",
+            )
+
         max_audio_seconds = selected_provider.capabilities.max_audio_seconds
         if (
-            duration_seconds is not None
-            and max_audio_seconds is not None
+            max_audio_seconds is not None
             and duration_seconds > max_audio_seconds
         ):
             raise TranscriptionProviderError(
