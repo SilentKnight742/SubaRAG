@@ -1,8 +1,9 @@
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "./App";
+import type { TranscriptionProvider } from "./api/transcription";
 import { RECORDER_SETTINGS } from "./hooks/useAudioRecorder";
 
 const originalMediaDevices = navigator.mediaDevices;
@@ -10,10 +11,41 @@ const originalCreateObjectUrl = Object.getOwnPropertyDescriptor(URL, "createObje
 const originalRevokeObjectUrl = Object.getOwnPropertyDescriptor(URL, "revokeObjectURL");
 const createObjectUrl = vi.fn(() => "blob:subarag-recording");
 const revokeObjectUrl = vi.fn();
+const fetchMock = vi.fn();
+
+function transcriptionResult(provider: TranscriptionProvider) {
+  return {
+    text: `Transcript from ${provider === "sarvam" ? "Sarvam" : "ElevenLabs"}.`,
+    provider,
+    latency_ms: provider === "sarvam" ? 182 : 241,
+    duration_seconds: 1,
+    language: "hi-IN",
+    language_confidence: 0.98,
+    segments: [],
+    provider_request_id: `${provider}-request-id`,
+  };
+}
+
+function jsonResponse(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+function formDataForCall(callIndex: number) {
+  return fetchMock.mock.calls[callIndex]?.[1]?.body as FormData;
+}
 
 beforeEach(() => {
   createObjectUrl.mockClear();
   revokeObjectUrl.mockClear();
+  fetchMock.mockReset();
+  fetchMock.mockImplementation(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    const provider = (init?.body as FormData).get("provider") as TranscriptionProvider;
+    return jsonResponse(transcriptionResult(provider));
+  });
+  vi.stubGlobal("fetch", fetchMock);
   Object.defineProperty(URL, "createObjectURL", {
     configurable: true,
     value: createObjectUrl,
@@ -132,6 +164,7 @@ describe("voice input shell", () => {
     expect(screen.getByRole("heading", { name: /ask at the speed/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Start recording" })).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "Spoken language" })).toHaveValue("auto");
+    expect(screen.getByRole("combobox", { name: "Test provider" })).toHaveValue("compare");
     expect(screen.getByRole("option", { name: "Hindi" })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "Marathi" })).toBeInTheDocument();
     expect(screen.getByText("Your words will appear here.")).toBeInTheDocument();
@@ -154,7 +187,10 @@ describe("voice input shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Stop recording" }));
 
     expect(await screen.findByText("Audio captured")).toBeInTheDocument();
-    expect(screen.getByText("Recording ready for transcription.")).toBeInTheDocument();
+    expect(await screen.findByText("Provider comparison ready.")).toBeInTheDocument();
+    expect(screen.getByText("Transcript from Sarvam.")).toBeInTheDocument();
+    expect(screen.getByText("Transcript from ElevenLabs.")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(screen.getByLabelText("Recorded audio preview")).toHaveAttribute(
       "src",
       "blob:subarag-recording",
@@ -166,6 +202,213 @@ describe("voice input shell", () => {
     expect(screen.queryByLabelText("Recorded audio preview")).not.toBeInTheDocument();
     expect(screen.getByText("Ready when you are")).toBeInTheDocument();
     expect(revokeObjectUrl).toHaveBeenCalledWith("blob:subarag-recording");
+  });
+
+  it("sends the same captured audio to both providers automatically", async () => {
+    const getUserMedia = vi.fn().mockResolvedValue({
+      getTracks: () => [{ stop: vi.fn() }],
+    });
+    installRecorderMock(getUserMedia);
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Start recording" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Stop recording" }));
+
+    expect(await screen.findByText("Provider comparison ready.")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    const sarvamForm = formDataForCall(0);
+    const elevenLabsForm = formDataForCall(1);
+    const sarvamAudio = sarvamForm.get("audio") as File;
+    const elevenLabsAudio = elevenLabsForm.get("audio") as File;
+
+    expect(sarvamForm.get("provider")).toBe("sarvam");
+    expect(elevenLabsForm.get("provider")).toBe("elevenlabs");
+    expect(sarvamForm.has("language")).toBe(false);
+    expect(elevenLabsForm.has("language")).toBe(false);
+    expect(sarvamAudio.size).toBe(elevenLabsAudio.size);
+    expect(sarvamAudio.type).toBe("audio/webm;codecs=opus");
+    expect(elevenLabsAudio.type).toBe("audio/webm;codecs=opus");
+  });
+
+  it("forwards an explicit language to one selected provider", async () => {
+    const getUserMedia = vi.fn().mockResolvedValue({
+      getTracks: () => [{ stop: vi.fn() }],
+    });
+    installRecorderMock(getUserMedia);
+    render(<App />);
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Spoken language" }), {
+      target: { value: "mr" },
+    });
+    fireEvent.change(screen.getByRole("combobox", { name: "Test provider" }), {
+      target: { value: "sarvam" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Start recording" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Stop recording" }));
+
+    expect(await screen.findByText("Transcript ready.")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(formDataForCall(0).get("provider")).toBe("sarvam");
+    expect(formDataForCall(0).get("language")).toBe("mr");
+  });
+
+  it("keeps a successful comparison result when the other provider fails", async () => {
+    let elevenLabsAttempts = 0;
+    fetchMock.mockImplementation(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const provider = (init?.body as FormData).get("provider") as TranscriptionProvider;
+
+      if (provider === "elevenlabs" && elevenLabsAttempts++ === 0) {
+        return jsonResponse(
+          {
+            error: {
+              code: "provider_unavailable",
+              message: "ElevenLabs is temporarily unavailable.",
+              retryable: true,
+            },
+          },
+          503,
+        );
+      }
+
+      return jsonResponse(transcriptionResult(provider));
+    });
+    const getUserMedia = vi.fn().mockResolvedValue({
+      getTracks: () => [{ stop: vi.fn() }],
+    });
+    installRecorderMock(getUserMedia);
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Start recording" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Stop recording" }));
+
+    expect(await screen.findByText("One provider completed.")).toBeInTheDocument();
+    expect(screen.getByText("Transcript from Sarvam.")).toBeInTheDocument();
+    expect(screen.getByText("ElevenLabs is temporarily unavailable.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Retry transcription" }));
+
+    expect(await screen.findByText("Provider comparison ready.")).toBeInTheDocument();
+    expect(screen.getByText("Transcript from Sarvam.")).toBeInTheDocument();
+    expect(screen.getByText("Transcript from ElevenLabs.")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(formDataForCall(0).get("provider")).toBe("sarvam");
+    expect(formDataForCall(1).get("provider")).toBe("elevenlabs");
+    expect(formDataForCall(2).get("provider")).toBe("elevenlabs");
+  });
+
+  it("does not offer retry for a deterministic transcription error", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(
+        {
+          error: {
+            code: "unsupported_language",
+            message: "The selected language is not supported.",
+            retryable: false,
+          },
+        },
+        400,
+      ),
+    );
+    const getUserMedia = vi.fn().mockResolvedValue({
+      getTracks: () => [{ stop: vi.fn() }],
+    });
+    installRecorderMock(getUserMedia);
+    render(<App />);
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Test provider" }), {
+      target: { value: "sarvam" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Start recording" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Stop recording" }));
+
+    expect(await screen.findByText("The selected language is not supported.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Retry transcription" })).not.toBeInTheDocument();
+  });
+
+  it("retries a failed transcription with the same recording", async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse(
+          {
+            error: {
+              code: "provider_timeout",
+              message: "Sarvam timed out.",
+              retryable: true,
+            },
+          },
+          504,
+        ),
+      )
+      .mockResolvedValueOnce(jsonResponse(transcriptionResult("sarvam")));
+    const getUserMedia = vi.fn().mockResolvedValue({
+      getTracks: () => [{ stop: vi.fn() }],
+    });
+    installRecorderMock(getUserMedia);
+    render(<App />);
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Test provider" }), {
+      target: { value: "sarvam" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Start recording" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Stop recording" }));
+
+    fireEvent.click(await screen.findByRole("button", { name: "Retry transcription" }));
+
+    expect(await screen.findByText("Transcript from Sarvam.")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(formDataForCall(0).get("audio")).toBeInstanceOf(File);
+    expect(formDataForCall(1).get("audio")).toBeInstanceOf(File);
+  });
+
+  it("aborts an in-flight transcription when recording again", async () => {
+    let requestSignal: AbortSignal | undefined;
+    fetchMock.mockImplementation(
+      (_input: RequestInfo | URL, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          requestSignal = init?.signal ?? undefined;
+          requestSignal?.addEventListener("abort", () => {
+            reject(new DOMException("Request aborted", "AbortError"));
+          });
+        }),
+    );
+    const getUserMedia = vi.fn().mockResolvedValue({
+      getTracks: () => [{ stop: vi.fn() }],
+    });
+    installRecorderMock(getUserMedia);
+    render(<App />);
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Test provider" }), {
+      target: { value: "sarvam" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Start recording" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Stop recording" }));
+    expect(await screen.findByText("Transcribing your question…")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Record again" }));
+
+    await waitFor(() => expect(requestSignal?.aborted).toBe(true));
+    expect(await screen.findByRole("button", { name: "Stop recording" })).toBeInTheDocument();
+  });
+
+  it("submits a completed recording only once under React Strict Mode", async () => {
+    const getUserMedia = vi.fn().mockResolvedValue({
+      getTracks: () => [{ stop: vi.fn() }],
+    });
+    installRecorderMock(getUserMedia);
+    render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    );
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Test provider" }), {
+      target: { value: "sarvam" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Start recording" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Stop recording" }));
+
+    expect(await screen.findByText("Transcript ready.")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledOnce();
   });
 
   it("does not open two permission requests from repeated starts", async () => {
@@ -225,7 +468,16 @@ describe("voice input shell", () => {
     expect(screen.getByRole("button", { name: "Stop recording" })).toBeInTheDocument();
 
     act(() => {
-      vi.advanceTimersByTime(30_000);
+      vi.advanceTimersByTime(
+        RECORDER_SETTINGS.maxDurationSeconds * 1_000 -
+          RECORDER_SETTINGS.providerSafetyMarginMs -
+          1,
+      );
+    });
+    expect(screen.getByRole("button", { name: "Stop recording" })).toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(1);
     });
 
     expect(screen.getByText("Audio captured")).toBeInTheDocument();

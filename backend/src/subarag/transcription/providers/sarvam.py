@@ -128,7 +128,7 @@ class SarvamTranscriptionProvider:
         data = {
             "model": self._model,
             "mode": "transcribe",
-            "with_timestamps": "true",
+            "with_timestamps": "false",
         }
         if request.language:
             data["language_code"] = _sarvam_language_code(request.language)

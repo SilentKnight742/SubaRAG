@@ -14,6 +14,7 @@ export const RECORDER_SETTINGS = {
   analysisIntervalMs: 100,
   initialSilenceMs: 6_000,
   maxDurationSeconds: 30,
+  providerSafetyMarginMs: 500,
   speechConfirmationMs: 200,
   speechContinueRms: 0.008,
   speechStartRms: 0.015,
@@ -77,6 +78,8 @@ export function useAudioRecorder(overrides: Partial<RecorderSettings> = {}) {
   const initialSilenceMs = overrides.initialSilenceMs ?? RECORDER_SETTINGS.initialSilenceMs;
   const maxDurationSeconds =
     overrides.maxDurationSeconds ?? RECORDER_SETTINGS.maxDurationSeconds;
+  const providerSafetyMarginMs =
+    overrides.providerSafetyMarginMs ?? RECORDER_SETTINGS.providerSafetyMarginMs;
   const speechConfirmationMs =
     overrides.speechConfirmationMs ?? RECORDER_SETTINGS.speechConfirmationMs;
   const speechContinueRms =
@@ -416,7 +419,7 @@ export function useAudioRecorder(overrides: Partial<RecorderSettings> = {}) {
 
       durationTimeoutRef.current = setTimeout(
         () => stopRecording("limit"),
-        maxDurationSeconds * 1_000,
+        Math.max(0, maxDurationSeconds * 1_000 - providerSafetyMarginMs),
       );
     } catch (error) {
       const recorder = recorderRef.current;
@@ -442,6 +445,7 @@ export function useAudioRecorder(overrides: Partial<RecorderSettings> = {}) {
   }, [
     clearRecordingTimers,
     maxDurationSeconds,
+    providerSafetyMarginMs,
     releaseStream,
     startSilenceDetection,
     status,

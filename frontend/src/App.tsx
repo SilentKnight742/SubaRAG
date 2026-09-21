@@ -1,12 +1,24 @@
 import { useEffect, useState, type CSSProperties } from "react";
 
+import type { ProviderSelection } from "./api/transcription";
 import { useAudioRecorder, type RecorderStatus } from "./hooks/useAudioRecorder";
+import {
+  useTranscription,
+  type ProviderOutcome,
+  type TranscriptionStatus,
+} from "./hooks/useTranscription";
 
 const languages = [
   { value: "auto", label: "Auto detect" },
   { value: "en", label: "English" },
   { value: "hi", label: "Hindi" },
   { value: "mr", label: "Marathi" },
+];
+
+const providerSelections: { value: ProviderSelection; label: string }[] = [
+  { value: "compare", label: "Compare both" },
+  { value: "sarvam", label: "Sarvam" },
+  { value: "elevenlabs", label: "ElevenLabs" },
 ];
 
 const waveform = [30, 48, 68, 42, 76, 92, 58, 36, 64, 82, 52, 72, 40, 56, 34];
@@ -34,14 +46,37 @@ function formatTime(seconds: number) {
     .padStart(2, "0")}`;
 }
 
-function getTranscriptState(status: RecorderStatus) {
+function getTranscriptState(
+  status: RecorderStatus,
+  transcriptionStatus: TranscriptionStatus,
+  outcomes: ProviderOutcome[],
+) {
+  if (transcriptionStatus === "uploading") {
+    return { copy: "Transcribing your question…", state: "Working" };
+  }
+
+  if (transcriptionStatus === "success") {
+    return {
+      copy: outcomes.length > 1 ? "Provider comparison ready." : "Transcript ready.",
+      state: "Complete",
+    };
+  }
+
+  if (transcriptionStatus === "partial") {
+    return { copy: "One provider completed.", state: "Partial result" };
+  }
+
+  if (transcriptionStatus === "error") {
+    return { copy: "Transcription needs another try.", state: "Request failed" };
+  }
+
   switch (status) {
     case "requesting":
       return { copy: "Approve microphone access to begin.", state: "Permission" };
     case "recording":
       return { copy: "Capturing your question…", state: "Recording" };
     case "ready":
-      return { copy: "Recording ready for transcription.", state: "Audio ready" };
+      return { copy: "Preparing your recording…", state: "Audio ready" };
     case "error":
       return { copy: "Your words will appear here.", state: "Needs attention" };
     default:
@@ -63,10 +98,26 @@ export default function App() {
     status,
     stopRecording,
   } = useAudioRecorder();
+  const {
+    canRetry,
+    outcomes,
+    reset: resetTranscription,
+    retry: retryTranscription,
+    status: transcriptionStatus,
+    submit: submitTranscription,
+  } = useTranscription();
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [language, setLanguage] = useState("auto");
+  const [providerSelection, setProviderSelection] =
+    useState<ProviderSelection>("compare");
   const isRecording = status === "recording";
   const isRequesting = status === "requesting";
-  const transcript = getTranscriptState(status);
+  const isTranscribing = transcriptionStatus === "uploading";
+  const controlsLocked =
+    isRecording || isRequesting || isStopping || capturedAudio !== null;
+  const transcript = getTranscriptState(status, transcriptionStatus, outcomes);
+  const transcriptPanelState =
+    transcriptionStatus === "idle" ? status : transcriptionStatus;
 
   useEffect(() => {
     if (!capturedAudio) {
@@ -79,6 +130,19 @@ export default function App() {
 
     return () => URL.revokeObjectURL(nextAudioUrl);
   }, [capturedAudio]);
+
+  useEffect(() => {
+    if (!capturedAudio) {
+      resetTranscription();
+      return;
+    }
+
+    void submitTranscription({
+      audio: capturedAudio.blob,
+      language,
+      selection: providerSelection,
+    });
+  }, [capturedAudio, language, providerSelection, resetTranscription, submitTranscription]);
 
   const recordingDetail =
     silenceDetectionAvailable === false
@@ -143,7 +207,13 @@ export default function App() {
       return;
     }
 
+    resetTranscription();
     void startRecording();
+  };
+
+  const handleDiscard = () => {
+    resetTranscription();
+    discardRecording();
   };
 
   return (
@@ -160,7 +230,7 @@ export default function App() {
         </a>
         <div className="build-label">
           <span className="status-dot" aria-hidden="true" />
-          Voice input · Step 01
+          Voice transcription · Step 02
         </div>
       </header>
 
@@ -183,20 +253,41 @@ export default function App() {
             <h2 id="voice-card-title">What do you want to know?</h2>
           </div>
 
-          <label className="language-control">
-            <span>Spoken language</span>
-            <select
-              defaultValue="auto"
-              aria-label="Spoken language"
-              disabled={isRecording || isRequesting || isStopping}
-            >
-              {languages.map((language) => (
-                <option key={language.value} value={language.value}>
-                  {language.label}
-                </option>
-              ))}
-            </select>
-          </label>
+          <div className="capture-controls">
+            <label className="language-control">
+              <span>Spoken language</span>
+              <select
+                value={language}
+                aria-label="Spoken language"
+                disabled={controlsLocked}
+                onChange={(event) => setLanguage(event.target.value)}
+              >
+                {languages.map((languageOption) => (
+                  <option key={languageOption.value} value={languageOption.value}>
+                    {languageOption.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="language-control">
+              <span>Test provider</span>
+              <select
+                value={providerSelection}
+                aria-label="Test provider"
+                disabled={controlsLocked}
+                onChange={(event) =>
+                  setProviderSelection(event.target.value as ProviderSelection)
+                }
+              >
+                {providerSelections.map((provider) => (
+                  <option key={provider.value} value={provider.value}>
+                    {provider.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
         </div>
 
         <div className="recorder-stage" data-state={status}>
@@ -236,23 +327,77 @@ export default function App() {
           </div>
         </div>
 
-        <div className="transcript-panel" data-state={status} aria-labelledby="transcript-title">
+        <div
+          className="transcript-panel"
+          data-state={transcriptPanelState}
+          aria-labelledby="transcript-title"
+          aria-busy={isTranscribing}
+          aria-live="polite"
+        >
           <div className="transcript-heading">
             <div>
               <p className="section-index">LIVE TRANSCRIPT</p>
               <h3 id="transcript-title">{transcript.copy}</h3>
             </div>
-            <span className="transcript-state" data-state={status}>
+            <span className="transcript-state" data-state={transcriptPanelState}>
               {transcript.state}
             </span>
           </div>
+
+          {isTranscribing ? (
+            <div className="transcription-progress" role="status">
+              <span aria-hidden="true" />
+              Sending the same recording to the selected provider
+              {providerSelection === "compare" ? "s" : ""}…
+            </div>
+          ) : null}
+
+          {outcomes.length > 0 ? (
+            <div className="transcription-results" aria-label="Transcription results">
+              {outcomes.map((outcome) => (
+                <article
+                  className={`provider-result provider-result--${outcome.status}`}
+                  key={outcome.provider}
+                  role={outcome.status === "error" ? "alert" : undefined}
+                >
+                  <div className="provider-result-heading">
+                    <h4>
+                      {outcome.provider === "sarvam" ? "Sarvam" : "ElevenLabs"}
+                    </h4>
+                    {outcome.status === "success" ? (
+                      <span>{Math.round(outcome.result.latency_ms)} ms</span>
+                    ) : (
+                      <span>Failed</span>
+                    )}
+                  </div>
+                  {outcome.status === "success" ? (
+                    <>
+                      <p>{outcome.result.text}</p>
+                      <small>
+                        {outcome.result.language ?? "Language auto-detected"} ·{" "}
+                        {outcome.result.duration_seconds.toFixed(1)}s audio
+                      </small>
+                    </>
+                  ) : (
+                    <p>{outcome.message}</p>
+                  )}
+                </article>
+              ))}
+            </div>
+          ) : null}
+
+          {canRetry ? (
+            <button className="retry-button" type="button" onClick={retryTranscription}>
+              Retry transcription
+            </button>
+          ) : null}
 
           {status === "ready" && audioUrl ? (
             <div className="audio-preview">
               <audio controls preload="metadata" src={audioUrl} aria-label="Recorded audio preview">
                 Your browser does not support audio playback.
               </audio>
-              <button className="discard-button" type="button" onClick={discardRecording}>
+              <button className="discard-button" type="button" onClick={handleDiscard}>
                 Discard
               </button>
             </div>

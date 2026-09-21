@@ -32,6 +32,7 @@ def test_sarvam_builds_request_and_normalizes_response() -> None:
             assert request.url == "https://api.sarvam.ai/speech-to-text"
             assert request.headers["api-subscription-key"] == "sarvam-secret"
             assert b'name="model"' in body and b"saaras:v3" in body
+            assert b'name="with_timestamps"' in body and b"false" in body
             assert b'name="language_code"' in body and b"hi-IN" in body
             assert b'filename="question.webm"' in body
             assert b"webm-audio" in body
@@ -42,11 +43,6 @@ def test_sarvam_builds_request_and_normalizes_response() -> None:
                     "transcript": "गोवा की राजधानी क्या है?",
                     "language_code": "hi-IN",
                     "language_probability": 0.97,
-                    "timestamps": {
-                        "words": ["गोवा की राजधानी", "क्या है"],
-                        "start_time_seconds": [0.1, 1.2],
-                        "end_time_seconds": [1.1, 1.8],
-                    },
                 },
             )
 
@@ -58,10 +54,7 @@ def test_sarvam_builds_request_and_normalizes_response() -> None:
         assert result.language == "hi-IN"
         assert result.language_confidence == 0.97
         assert result.provider_request_id == "sarvam-1"
-        assert [segment.text for segment in result.segments] == [
-            "गोवा की राजधानी",
-            "क्या है",
-        ]
+        assert result.segments == ()
 
     asyncio.run(run_test())
 
