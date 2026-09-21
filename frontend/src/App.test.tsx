@@ -135,7 +135,7 @@ describe("voice input shell", () => {
     expect(screen.getByRole("option", { name: "Hindi" })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "Marathi" })).toBeInTheDocument();
     expect(screen.getByText("Your words will appear here.")).toBeInTheDocument();
-    expect(screen.getByText(/01:00 maximum/i)).toBeInTheDocument();
+    expect(screen.getByText(/00:30 maximum/i)).toBeInTheDocument();
   });
 
   it("captures audio locally and releases the microphone", async () => {
@@ -209,7 +209,7 @@ describe("voice input shell", () => {
     expect(getUserMedia).toHaveBeenCalledOnce();
   });
 
-  it("stops automatically at the 60 second limit", async () => {
+  it("stops automatically at the 30 second limit", async () => {
     vi.useFakeTimers();
     const getUserMedia = vi.fn().mockResolvedValue({
       getTracks: () => [{ stop: vi.fn() }],
@@ -225,11 +225,11 @@ describe("voice input shell", () => {
     expect(screen.getByRole("button", { name: "Stop recording" })).toBeInTheDocument();
 
     act(() => {
-      vi.advanceTimersByTime(60_000);
+      vi.advanceTimersByTime(30_000);
     });
 
     expect(screen.getByText("Audio captured")).toBeInTheDocument();
-    expect(screen.getByText(/01:00 limit reached/i)).toBeInTheDocument();
+    expect(screen.getByText(/00:30 limit reached/i)).toBeInTheDocument();
   });
 
   it("auto-stops after confirmed speech followed by sustained silence", async () => {

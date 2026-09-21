@@ -13,7 +13,7 @@ export interface CapturedAudio {
 export const RECORDER_SETTINGS = {
   analysisIntervalMs: 100,
   initialSilenceMs: 6_000,
-  maxDurationSeconds: 60,
+  maxDurationSeconds: 30,
   speechConfirmationMs: 200,
   speechContinueRms: 0.008,
   speechStartRms: 0.015,
