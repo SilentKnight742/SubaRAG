@@ -16,11 +16,27 @@ The concrete async HTTP adapters use:
 
 Copy `.env.example` to `.env` when local authenticated testing begins. Never commit the populated file.
 
+The local API exposes:
+
+- `POST /api/transcriptions` with an `audio` file plus optional `language` and `provider` multipart fields.
+- `GET /healthz` for readiness and configured-provider names; it never returns credentials.
+
+Uploads are capped at 8 MiB, restricted to browser WebM/Opus or MP4/AAC audio, decoded server-side, and rejected before provider work when their measured duration exceeds 30 seconds. `SUBARAG_ALLOW_PROVIDER_SELECTION` is enabled only for local A/B testing; it will be disabled after a provider is selected.
+
 Realtime partial transcripts are intentionally deferred. Both vendors' realtime APIs require PCM-style streams rather than the current MediaRecorder WebM output, so that path needs a separate browser audio-worklet design.
 
 ## Run tests
 
 ```bash
 cd backend
-PYTHONDONTWRITEBYTECODE=1 python3 -m pytest
+python3 -m venv .venv
+.venv/bin/pip install -e '.[dev]'
+.venv/bin/python -m pytest
+```
+
+## Run locally
+
+```bash
+cd backend
+.venv/bin/uvicorn subarag.api:app --reload
 ```
