@@ -19,6 +19,25 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8.4,<10"]
 data = ["datasets>=3,<5"]
+rag = [
+    "bm25s>=0.3.12,<0.4",
+    "faiss-cpu>=1.15,<2",
+    "numpy>=2,<3",
+    "sentence-transformers>=6,<7",
+]
+experiments = [
+    "bm25s>=0.3.12,<0.4",
+    "datasets>=3,<5",
+    "faiss-cpu>=1.15,<2",
+    "numpy>=2,<3",
+    "psutil>=7,<8",
+    "sentence-transformers>=6,<7",
+]
+
+[project.scripts]
+subarag-benchmark = "subarag.experiments.retrieval:main"
+subarag-build-index = "subarag.experiments.build_index:main"
+subarag-rerank-benchmark = "subarag.experiments.reranking:main"
 
 [tool.pytest.ini_options]
 addopts = "-q -p no:cacheprovider"
