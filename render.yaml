@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: subarag
+    runtime: docker
+    plan: free
+    region: singapore
+    branch: feature/rag-experiments
+    dockerfilePath: ./Dockerfile
+    autoDeployTrigger: "off"
+    healthCheckPath: /healthz
+    envVars:
+      - key: PORT
+        value: "7860"
+      - key: ELEVENLABS_API_KEY
+        sync: false
+      - key: SUBARAG_TRANSCRIPTION_PROVIDER
+        value: elevenlabs
+      - key: SUBARAG_ALLOW_PROVIDER_SELECTION
+        value: "false"
+      - key: SUBARAG_PREVIEW_PASSWORD
+        generateValue: true

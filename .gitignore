@@ -2,6 +2,7 @@
 node_modules/
 dist/
 coverage/
+artifacts/
 
 # Local configuration and credentials
 .env
@@ -18,4 +19,3 @@ __pycache__/
 .idea/
 .vscode/
 *.swp
-
