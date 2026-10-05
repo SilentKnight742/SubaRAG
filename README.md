@@ -4,11 +4,17 @@ Voice questions and fast, grounded answers across English, Hindi, and Marathi.
 
 ## Current stage
 
-Step one connects microphone capture, ElevenLabs transcription, typed questions,
-the backend query API, and the response panel. The RAG engine is intentionally
-unavailable: requests return an explicit status with **no generated answer or
-invented citations**. Step two implements retrieval and generation behind the
-same interface.
+The application connects microphone capture, provider-neutral transcription,
+typed questions, the backend query API, and the response panel. The measured
+retrieval layer now includes multilingual E5 embeddings, exact and FAISS HNSW
+indexes, a versioned retrieval cache, extractive context compression, reproducible
+benchmarks, and a server-owned citation boundary.
+
+The default application still reports RAG as unavailable because no answer
+generator has been selected or configured. It produces **no generated answer or
+invented citations** in that state. See the [experiment results](docs/experiments.md)
+and [measured architecture](docs/architecture.md) for the decisions and remaining
+release gate.
 
 Data preparation runs remotely using the [Colab notebook](notebooks/prepare_data.ipynb)
 and [data guide](docs/data.md). It produces a versioned passage corpus and
@@ -55,9 +61,11 @@ fallback that silently sends recordings to a second provider.
 | `POST /api/transcriptions` | Validated browser audio → normalized transcript |
 | `POST /api/queries` | `{question, language}` → answer/status/citations |
 
-`subarag.rag.RagEngine` is the sole implementation seam for step two. An
+`subarag.rag.RagEngine` is the application seam for retrieval and generation. An
 `answered` result requires both text and citations; `unavailable` and `no_answer`
-results cannot carry either. Query retries do not repeat transcription.
+results cannot carry either. `GroundedRagEngine` additionally rejects generated
+citation IDs that were not present in retrieved evidence. Query retries do not
+repeat transcription.
 
 ## Checks
 
