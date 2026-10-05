@@ -109,4 +109,14 @@ describe("transcription API client", () => {
       status: 200,
     });
   });
+
+  it("offers an explicit retry after a temporary non-JSON gateway failure", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("Bad gateway", { status: 502 })));
+
+    await expect(transcribeAudio({
+      audio: new Blob(["voice"], { type: "audio/webm" }), language: "auto",
+    })).rejects.toMatchObject<Partial<TranscriptionApiError>>({
+      code: "http_502", retryable: true, status: 502,
+    });
+  });
 });

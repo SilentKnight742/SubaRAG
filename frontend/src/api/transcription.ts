@@ -1,5 +1,4 @@
 export type TranscriptionProvider = "sarvam" | "elevenlabs";
-export type ProviderSelection = TranscriptionProvider | "compare";
 
 export interface TranscriptSegment {
   text: string;
@@ -119,7 +118,9 @@ export async function transcribeAudio({
         : "Transcription could not be completed.",
       {
         code: typeof detail?.code === "string" ? detail.code : `http_${response.status}`,
-        retryable: detail?.retryable === true,
+        retryable: typeof detail?.retryable === "boolean"
+          ? detail.retryable
+          : response.status === 429 || response.status >= 500,
         status: response.status,
       },
     );
