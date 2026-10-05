@@ -1,6 +1,25 @@
-"""Replaceable RAG boundary; retrieval and generation arrive in step two."""
+"""Replaceable, citation-enforcing RAG boundary."""
 
-from .engine import RagEngine, UnavailableRagEngine
+from .engine import GroundedRagEngine, RagEngine, UnavailableRagEngine
+from .generation import (
+    AnswerGenerator,
+    Evidence,
+    GeneratedAnswer,
+    GenerationRequest,
+    UngroundedAnswerError,
+)
 from .models import Citation, RagQuery, RagResult
 
-__all__ = ["Citation", "RagEngine", "RagQuery", "RagResult", "UnavailableRagEngine"]
+__all__ = [
+    "AnswerGenerator",
+    "Citation",
+    "Evidence",
+    "GeneratedAnswer",
+    "GenerationRequest",
+    "GroundedRagEngine",
+    "RagEngine",
+    "RagQuery",
+    "RagResult",
+    "UnavailableRagEngine",
+    "UngroundedAnswerError",
+]
