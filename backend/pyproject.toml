@@ -33,10 +33,16 @@ experiments = [
     "psutil>=7,<8",
     "sentence-transformers>=6,<7",
 ]
+generation = [
+    "psutil>=7,<8",
+    "torch>=2.8,<3",
+    "transformers>=5,<6",
+]
 
 [project.scripts]
 subarag-benchmark = "subarag.experiments.retrieval:main"
 subarag-build-index = "subarag.experiments.build_index:main"
+subarag-generator-benchmark = "subarag.experiments.generation:main"
 subarag-rerank-benchmark = "subarag.experiments.reranking:main"
 
 [tool.pytest.ini_options]
