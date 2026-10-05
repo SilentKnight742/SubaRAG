@@ -11,9 +11,10 @@ indexes, a versioned retrieval cache, extractive context compression, reproducib
 benchmarks, and a server-owned citation boundary.
 
 The default application still reports RAG as unavailable because no answer
-generator has been selected or configured. It produces **no generated answer or
-invented citations** in that state. See the [experiment results](docs/experiments.md)
-and [measured architecture](docs/architecture.md) for the decisions and remaining
+generator passed the first local quality and latency gate. It produces **no
+generated answer or invented citations** in that state. See the
+[experiment results](docs/experiments.md) and
+[measured architecture](docs/architecture.md) for the decisions and remaining
 release gate.
 
 Data preparation runs remotely using the [Colab notebook](notebooks/prepare_data.ipynb)

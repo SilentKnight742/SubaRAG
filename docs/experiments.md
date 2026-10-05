@@ -128,5 +128,44 @@ embedding cost. Revisit index families only when a real larger-corpus trace show
 ANN search is a meaningful part of end-to-end p95.
 
 Generation TTFT, factuality, citation precision, and end-to-end answer quality
-remain unmeasured because no generation provider has been selected. Retrieval
-metrics must not be presented as answer-quality metrics.
+remain unmeasured for a production candidate because no generator passed the
+first local gate. Retrieval metrics must not be presented as answer-quality
+metrics.
+
+## Generator bake-off
+
+The generator gate used labeled evidence rather than retrieved evidence so it
+could test generation independently of retrieval errors. Each query was paired
+with an answerable case containing relevant evidence plus distractors and a
+no-answer case containing only distractors. The model had to return strict JSON,
+use short evidence aliases, cite a relevant source, and refuse unsupported
+questions.
+
+`Qwen/Qwen2.5-0.5B-Instruct` failed both corrected English gate cases:
+
+| Measure | Result |
+| --- | ---: |
+| Valid JSON/schema rate | 0% |
+| Grounded citation rate | 0% |
+| No-answer accuracy | 0% |
+| Time to first token, p50 | 9.38 s |
+| Total generation time, p50 | 13.76 s |
+| Total generation time, p95 | 18.66 s |
+
+It returned a refusal despite directly supporting evidence, then answered the
+matched distractor-only case from outside knowledge. Both responses also broke
+the citation schema. An initial multilingual pass showed the same format and
+grounding failures and was stopped early rather than tuned against the test set.
+
+The 1.5B candidate was eliminated by the staged latency gate before inference.
+It uses the same Qwen2.5 decoder family with three times the parameters; once the
+0.5B model's first token already took seconds rather than hundreds of
+milliseconds on the target CPU class, the larger model could not satisfy the
+project's quick-response requirement even if its answer quality improved. No
+latency or quality number is claimed for the 1.5B model.
+
+Decision: no local Transformers generator is selected and the application stays
+fail-closed with `UnavailableRagEngine`. The next generator comparison should be
+between low-latency hosted APIs or a deliberately optimized quantized runtime,
+using the same frozen gate. A weak local model will not be wired merely to make
+the demo appear complete.

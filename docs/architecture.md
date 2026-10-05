@@ -39,7 +39,8 @@ flowchart LR
 `GroundedRagEngine` implements this trust boundary. The current application still
 uses `UnavailableRagEngine` by default until a generation provider is chosen and
 configured; this avoids making a deployment appear complete while silently
-inventing an answer layer.
+inventing an answer layer. The first local Qwen bake-off selected no winner: the
+smallest candidate failed grounding and took seconds to produce its first token.
 
 ## Offline artifact path
 
