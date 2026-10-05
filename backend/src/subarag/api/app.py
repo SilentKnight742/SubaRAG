@@ -5,12 +5,15 @@ from collections.abc import AsyncIterator, Callable
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from functools import partial
+from time import perf_counter
 from typing import Protocol, cast
+from uuid import uuid4
 
 import httpx
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from python_multipart.exceptions import MultipartParseError
 from starlette.datastructures import FormData, UploadFile as StarletteUploadFile
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -27,6 +30,8 @@ from ..transcription import (
     UnknownTranscriptionProviderError,
     create_transcription_http_client,
 )
+from ..data.manifest import load_manifest
+from ..rag import RagEngine, RagQuery, UnavailableRagEngine
 from .media import (
     ALLOWED_MEDIA_TYPES,
     InspectedAudio,
@@ -34,8 +39,18 @@ from .media import (
     inspect_audio,
     normalize_media_type,
 )
-from .schemas import ErrorResponse, HealthResponse, TranscriptionResponse
+from .schemas import (
+    ApplicationStatus,
+    DataStatus,
+    ErrorResponse,
+    HealthResponse,
+    QueryResponse,
+    RagStatus,
+    TranscriptionResponse,
+    TranscriptionStatus,
+)
 from .settings import Settings
+from .access import PreviewAccessMiddleware
 
 
 UPLOAD_CHUNK_BYTES = 64 * 1024
@@ -319,11 +334,26 @@ def create_app(
     service: TranscriptionServiceLike | None = None,
     media_inspector: MediaInspector = inspect_audio,
     client_factory: ClientFactory = create_transcription_http_client,
+    rag_engine: RagEngine | None = None,
 ) -> FastAPI:
     runtime_settings = settings or Settings()
+    engine = rag_engine or UnavailableRagEngine()
 
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
+        manifest_path = runtime_settings.data_manifest
+        manifest = (
+            load_manifest(manifest_path, verify_files=True)
+            if manifest_path is not None
+            else None
+        )
+        application.state.data_status = DataStatus(
+            status="ready" if manifest is not None else "not_configured",
+            revision=manifest.source.revision if manifest is not None else None,
+        )
+        application.state.transcription_slots = asyncio.Semaphore(
+            runtime_settings.max_concurrent_transcriptions
+        )
         media_executor = ThreadPoolExecutor(
             max_workers=MEDIA_INSPECTION_WORKERS,
             thread_name_prefix="subarag-media",
@@ -359,6 +389,11 @@ def create_app(
         RequestBodyLimitMiddleware,
         max_bytes=runtime_settings.max_upload_bytes + MULTIPART_OVERHEAD_BYTES,
     )
+    if runtime_settings.preview_password is not None:
+        application.add_middleware(
+            PreviewAccessMiddleware,
+            password=runtime_settings.preview_password.get_secret_value(),
+        )
 
     @application.exception_handler(ApiRequestError)
     async def handle_api_error(
@@ -390,7 +425,7 @@ def create_app(
         return _error_response(
             status_code=422,
             code="invalid_request",
-            message="The transcription request is invalid.",
+            message="The request is invalid.",
         )
 
     @application.exception_handler(StarletteHTTPException)
@@ -445,6 +480,41 @@ def create_app(
         return HealthResponse(
             status="ok",
             providers=list(active_service.available_providers),
+        )
+
+    @application.get("/api/status", response_model=ApplicationStatus)
+    async def application_status(request: Request) -> ApplicationStatus:
+        return ApplicationStatus(
+            transcription=TranscriptionStatus(provider=runtime_settings.transcription_provider),
+            rag=RagStatus(status=engine.status),
+            data=request.app.state.data_status,
+        )
+
+    @application.post("/api/queries", response_model=QueryResponse)
+    async def query(query: RagQuery) -> QueryResponse | JSONResponse:
+        started_at = perf_counter()
+        try:
+            async with asyncio.timeout(runtime_settings.query_timeout_seconds):
+                result = await engine.answer(query)
+        except TimeoutError:
+            return _error_response(
+                status_code=504,
+                code="query_timeout",
+                message="The answer service took too long. Please try again.",
+                retryable=True,
+            )
+        except Exception:
+            return _error_response(
+                status_code=502,
+                code="query_failed",
+                message="The answer service could not complete your question.",
+                retryable=True,
+            )
+        return QueryResponse(
+            **result.model_dump(),
+            request_id=str(uuid4()),
+            question=query.question,
+            latency_ms=round((perf_counter() - started_at) * 1000, 2),
         )
 
     @application.post(
@@ -539,10 +609,23 @@ def create_app(
             language=selected_language,
         )
 
-        result = await active_service.transcribe(
-            transcription_request,
-            provider=selected_provider,
-        )
+        slots = request.app.state.transcription_slots
+        try:
+            await asyncio.wait_for(slots.acquire(), timeout=0.1)
+        except TimeoutError:
+            return _error_response(
+                status_code=503,
+                code="service_busy",
+                message="Transcription is busy. Please try again shortly.",
+                retryable=True,
+            )
+        try:
+            result = await active_service.transcribe(
+                transcription_request,
+                provider=selected_provider,
+            )
+        finally:
+            slots.release()
         return TranscriptionResponse(
             text=result.text,
             provider=result.provider,
@@ -553,6 +636,17 @@ def create_app(
             segments=list(result.segments),
             provider_request_id=result.provider_request_id,
         )
+
+    if runtime_settings.frontend_dist is not None:
+        frontend_dist = runtime_settings.frontend_dist.resolve()
+        index = frontend_dist / "index.html"
+        if not index.is_file() or not (frontend_dist / "assets").is_dir():
+            raise RuntimeError("Frontend build is missing. Run npm run build before serving it.")
+        application.mount("/assets", StaticFiles(directory=frontend_dist / "assets"), name="assets")
+
+        @application.get("/", include_in_schema=False)
+        async def index_page() -> FileResponse:
+            return FileResponse(index, headers={"Cache-Control": "no-cache"})
 
     return application
 

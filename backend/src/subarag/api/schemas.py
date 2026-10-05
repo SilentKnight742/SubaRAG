@@ -1,6 +1,10 @@
 """Stable JSON response models for the HTTP API."""
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict
+
+from ..rag import RagResult
 
 
 class TranscriptSegmentResponse(BaseModel):
@@ -37,3 +41,28 @@ class ErrorResponse(BaseModel):
 class HealthResponse(BaseModel):
     status: str
     providers: list[str]
+
+
+class QueryResponse(RagResult):
+    request_id: str
+    question: str
+    latency_ms: float
+
+
+class TranscriptionStatus(BaseModel):
+    provider: Literal["elevenlabs", "sarvam"]
+
+
+class RagStatus(BaseModel):
+    status: Literal["unavailable", "ready"]
+
+
+class DataStatus(BaseModel):
+    status: Literal["not_configured", "ready"]
+    revision: str | None = None
+
+
+class ApplicationStatus(BaseModel):
+    transcription: TranscriptionStatus
+    rag: RagStatus
+    data: DataStatus

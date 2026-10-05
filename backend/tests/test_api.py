@@ -71,6 +71,7 @@ class FakeInspector:
 
 
 def make_settings(**overrides: object) -> Settings:
+    overrides.setdefault("allow_provider_selection", True)
     return Settings(_env_file=None, **overrides)
 
 
