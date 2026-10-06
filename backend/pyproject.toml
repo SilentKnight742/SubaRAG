@@ -43,6 +43,7 @@ generation = [
 subarag-benchmark = "subarag.experiments.retrieval:main"
 subarag-build-index = "subarag.experiments.build_index:main"
 subarag-generator-benchmark = "subarag.experiments.generation:main"
+subarag-hosted-generator-benchmark = "subarag.experiments.hosted_generation:main"
 subarag-rerank-benchmark = "subarag.experiments.reranking:main"
 
 [tool.pytest.ini_options]

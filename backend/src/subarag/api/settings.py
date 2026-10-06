@@ -27,6 +27,14 @@ class Settings(BaseSettings):
         default=None,
         validation_alias="ELEVENLABS_API_KEY",
     )
+    gemini_api_key: SecretStr | None = Field(
+        default=None,
+        validation_alias="GEMINI_API_KEY",
+    )
+    gemini_model: str = Field(
+        default="gemini-2.5-flash-lite",
+        validation_alias="SUBARAG_GEMINI_MODEL",
+    )
     transcription_provider: Literal["sarvam", "elevenlabs"] = Field(
         default="elevenlabs",
         validation_alias="SUBARAG_TRANSCRIPTION_PROVIDER",
@@ -52,7 +60,13 @@ class Settings(BaseSettings):
     max_audio_seconds: float = 30
     max_upload_bytes: int = 8 * 1024 * 1024
 
-    @field_validator("sarvam_api_key", "elevenlabs_api_key", "preview_password", mode="before")
+    @field_validator(
+        "sarvam_api_key",
+        "elevenlabs_api_key",
+        "gemini_api_key",
+        "preview_password",
+        mode="before",
+    )
     @classmethod
     def empty_secrets_are_unset(cls, value: object) -> object:
         return None if value == "" else value

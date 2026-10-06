@@ -20,11 +20,13 @@ def test_settings_mask_provider_credentials() -> None:
         _env_file=None,
         sarvam_api_key="sarvam-secret",
         elevenlabs_api_key="eleven-secret",
+        gemini_api_key="gemini-secret",
     )
 
     rendered = repr(settings)
     assert "sarvam-secret" not in rendered
     assert "eleven-secret" not in rendered
+    assert "gemini-secret" not in rendered
 
 
 def test_lifespan_builds_providers_and_closes_shared_client() -> None:
