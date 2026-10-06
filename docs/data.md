@@ -17,8 +17,8 @@ Its actual files for our initial languages are:
 | English | `English_passages`, `Eng_Query`, and `Eng_Answer` within the above files | Same |
 
 The card's named-language loading example and custom loader refer to JSONL paths
-that do not match the files. The pipeline uses the standard Hugging Face Parquet
-streaming reader with explicit, revision-pinned URLs. It executes no code from
+that do not match the files. The pipeline uses PyArrow's direct Parquet batch
+reader over HTTP range requests with revision-pinned URLs. It executes no code from
 the dataset repository. English-only runs use the Hindi file as their source.
 
 The card and loader describe `passages.English_passages`,
@@ -26,8 +26,9 @@ The card and loader describe `passages.English_passages`,
 The preparation code validates these fields, query IDs, and language tags. It
 accepts a nested passage object or a JSON-encoded object. Unexpected records go
 to a rejection file with source location and reason, without copying their text.
-The actual remote pilot still needs to run; published metadata inspection and
-synthetic tests do not prove every real row follows this schema.
+The full remote pilot still needs to finish. A bounded probe decoded a real
+Hindi training row with aligned passage arrays; that does not establish schema
+validity for every row.
 
 ## Run the pilot in Colab
 
@@ -59,11 +60,19 @@ python -m subarag.data verify /content/subarag-data-pilot/manifest.json
 
 The notebook uses fresh, uniquely named source and output folders on each run,
 so retries preserve partial work. Command output is streamed into the notebook.
+Renamed uploads such as `SubaRAG-source (1).zip` are accepted. Installation checks
+the reader version and verifies its file hash against the uploaded source before
+preparation can begin.
 
 The bound is **1,000 rows per source file**, across four source files, not 1,000
-passages or the full dataset. The reader uses 32-row batches, disables Arrow
-pre-buffering, enables 64 KiB buffered streams, and selects only needed columns.
-This requires `datasets>=4.2`. Small batches alone do not prevent eager reads:
+passages or the full dataset. The reader uses `ParquetFile.iter_batches` directly
+with 32-row batches, no Arrow pre-buffering, 64 KiB buffered streams, selected
+columns and no parallel column decoding. The HTTP cache holds at most eight
+256 KiB blocks. It bypasses the dataset scanner's nested-column chunking failure
+instead of skipping training data or loading the whole file. See the upstream
+[Arrow issue](https://github.com/apache/arrow/issues/21526) and the same direct
+reader strategy in [Ray](https://github.com/ray-project/ray/blob/master/python/ray/data/_internal/datasource/parquet_datasource.py).
+Small batches alone do not prevent eager reads:
 footer inspection of the pinned Hindi files found a single row group in each,
 about 1.16 GB uncompressed for validation and 9.73 GB for training. These options
 reduce eager buffering, but are not a hard process-memory cap: Parquet pages,

@@ -18,7 +18,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.4,<10"]
-data = ["datasets>=4.2,<5"]
+data = ["pyarrow>=21,<26", "fsspec[http]>=2025.3,<2027"]
 rag = [
     "bm25s>=0.3.12,<0.4",
     "faiss-cpu>=1.15,<2",
@@ -27,7 +27,8 @@ rag = [
 ]
 experiments = [
     "bm25s>=0.3.12,<0.4",
-    "datasets>=4.2,<5",
+    "pyarrow>=21,<26",
+    "fsspec[http]>=2025.3,<2027",
     "faiss-cpu>=1.15,<2",
     "numpy>=2,<3",
     "psutil>=7,<8",
