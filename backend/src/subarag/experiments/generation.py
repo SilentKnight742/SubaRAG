@@ -102,7 +102,20 @@ def build_cases(
                 expected_status="answered",
             ))
 
-            no_answer_ids = distractor_ids[:evidence_count]
+            # MSMARCO relevance labels are incomplete: an unlabelled candidate
+            # passage can still directly answer the query. Clean refusal cases
+            # therefore use passages outside the query's candidate pool and
+            # exclude any passage containing a reference answer.
+            excluded_ids = set(row.get("candidate_passage_ids", [])) | set(relevant_ids)
+            normalized_answers = tuple(answer.casefold() for answer in answers)
+            no_answer_ids = [
+                document.id
+                for document in documents
+                if document.id not in excluded_ids
+                and not any(answer in document.text.casefold() for answer in normalized_answers)
+            ][:evidence_count]
+            if len(no_answer_ids) < evidence_count:
+                continue
             no_answer_evidence = tuple(
                 (f"D{index}", identifier, documents_by_id[identifier].text)
                 for index, identifier in enumerate(no_answer_ids, 1)

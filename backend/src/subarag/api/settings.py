@@ -32,7 +32,7 @@ class Settings(BaseSettings):
         validation_alias="GEMINI_API_KEY",
     )
     gemini_model: str = Field(
-        default="gemini-2.5-flash-lite",
+        default="gemini-3.5-flash-lite",
         validation_alias="SUBARAG_GEMINI_MODEL",
     )
     transcription_provider: Literal["sarvam", "elevenlabs"] = Field(

@@ -36,11 +36,12 @@ flowchart LR
 7. Resolve citations from trusted evidence on the server. Missing or unknown IDs
    fail closed instead of producing an uncited answer.
 
-`GroundedRagEngine` implements this trust boundary. The current application still
-uses `UnavailableRagEngine` by default until a generation provider is chosen and
-configured; this avoids making a deployment appear complete while silently
-inventing an answer layer. The first local Qwen bake-off selected no winner: the
-smallest candidate failed grounding and took seconds to produce its first token.
+`GroundedRagEngine` implements this trust boundary. Gemini 3.5 Flash-Lite is the
+selected first generator: it passed the corrected frozen multilingual gate while
+the local Qwen candidate failed its supported-answer contract and latency gate.
+The application should enable the grounded engine only when both verified
+retrieval artifacts and the Gemini key are configured; partial configuration
+must continue to fail closed.
 
 ## Offline artifact path
 
@@ -112,7 +113,8 @@ negation should force invalidation even when general token overlap is high.
 
 ## Next experiment gate
 
-Before enabling generated answers, evaluate the chosen generator on a frozen
-multilingual set for answer correctness, unsupported-claim rate, citation
-precision/recall, no-answer behavior, time-to-first-token, and end-to-end
-p50/p95/p99. Retrieval quality alone is not the release gate.
+Before deployment, evaluate the assembled retrieval-plus-generation path on a
+larger frozen multilingual set for answer correctness, unsupported-claim rate,
+citation precision/recall, no-answer behavior, time-to-first-token, and
+end-to-end p50/p95/p99. The isolated generator gate passed, but retrieval quality
+or generator quality alone is not the release gate.

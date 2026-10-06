@@ -127,19 +127,21 @@ about 0.5 ms p95 here; changing ANN libraries cannot remove the 16-86 ms query
 embedding cost. Revisit index families only when a real larger-corpus trace shows
 ANN search is a meaningful part of end-to-end p95.
 
-Generation TTFT, factuality, citation precision, and end-to-end answer quality
-remain unmeasured for a production candidate because no generator passed the
-first local gate. Retrieval metrics must not be presented as answer-quality
-metrics.
+Retrieval metrics must not be presented as answer-quality metrics. Generation
+was therefore evaluated separately before selecting a serving candidate.
 
 ## Generator bake-off
 
 The generator gate used labeled evidence rather than retrieved evidence so it
-could test generation independently of retrieval errors. Each query was paired
-with an answerable case containing relevant evidence plus distractors and a
-no-answer case containing only distractors. The model had to return strict JSON,
-use short evidence aliases, cite a relevant source, and refuse unsupported
-questions.
+could test generation independently of retrieval errors. The model had to return
+strict JSON, use short evidence aliases, cite a relevant source, and refuse
+unsupported questions.
+
+An audit after the first local run found that MSMARCO's unlabelled candidate
+passages are not reliable negatives: several passages marked as distractors
+plainly contained the answer. The refusal score from that run is withdrawn. The
+corrected frozen gate draws no-answer evidence from outside the query's entire
+candidate pool and excludes passages containing any reference answer.
 
 `Qwen/Qwen2.5-0.5B-Instruct` failed both corrected English gate cases:
 
@@ -147,7 +149,7 @@ questions.
 | --- | ---: |
 | Valid JSON/schema rate | 0% |
 | Grounded citation rate | 0% |
-| No-answer accuracy | 0% |
+| No-answer accuracy | Withdrawn: invalid negative cases |
 | Time to first token, p50 | 9.38 s |
 | Total generation time, p50 | 13.76 s |
 | Total generation time, p95 | 18.66 s |
@@ -164,8 +166,35 @@ milliseconds on the target CPU class, the larger model could not satisfy the
 project's quick-response requirement even if its answer quality improved. No
 latency or quality number is claimed for the 1.5B model.
 
-Decision: no local Transformers generator is selected and the application stays
-fail-closed with `UnavailableRagEngine`. The next generator comparison should be
-between low-latency hosted APIs or a deliberately optimized quantized runtime,
-using the same frozen gate. A weak local model will not be wired merely to make
-the demo appear complete.
+Decision: no local Transformers generator is selected. Its supported English
+case still failed the schema/grounding contract, and its latency was already far
+outside the interactive target. The larger same-runtime model remained excluded
+by the staged latency gate.
+
+## Hosted generator gate
+
+Gemini 2.5 Flash-Lite is unavailable to new API users, despite remaining visible
+in model listings, so it produced no evaluable generations. Google directed the
+new account to Gemini 3.5 Flash-Lite. The replacement used structured output,
+minimal thinking, and the corrected 18-case English/Hindi/Marathi gate. Requests
+were paced at 4.1 seconds to stay below the observed free-tier rate limit; pacing
+time is excluded from per-request latency.
+
+| Measure | Gemini 3.5 Flash-Lite |
+| --- | ---: |
+| Valid JSON/schema rate | 100% |
+| Status accuracy | 94.4% |
+| Grounded citation rate | 88.9% |
+| No-answer accuracy | 100% |
+| Total generation time, p50 | 1.24 s |
+| Total generation time, p95 | 1.88 s |
+
+All four predeclared aggregate gates passed: at least 95% valid output, 80%
+grounded citations, 80% no-answer accuracy, and at most 3 seconds p95. One of
+three supported Marathi cases was refused, leaving Marathi grounded citation
+success at 66.7% on this very small sample. That limitation remains visible and
+must be rechecked on a larger end-to-end set.
+
+Decision: select `gemini-3.5-flash-lite` as the first hosted generator behind
+the server-owned grounding boundary. This gate isolates generation; it does not
+claim end-to-end RAG quality or time to first token from the non-streaming API.

@@ -17,7 +17,7 @@ from ..generation import (
 
 
 GEMINI_API_ROOT = "https://generativelanguage.googleapis.com/v1beta"
-DEFAULT_GEMINI_MODEL = "gemini-2.5-flash-lite"
+DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite"
 _MODEL_NAME = re.compile(r"^[A-Za-z0-9._-]+$")
 _LANGUAGE_NAMES = {
     "en": "English",
@@ -150,8 +150,8 @@ class GeminiAnswerGenerator:
                 }],
             }],
             "generationConfig": {
-                "temperature": 0,
                 "maxOutputTokens": 256,
+                "thinkingConfig": {"thinkingLevel": "MINIMAL"},
                 "responseMimeType": "application/json",
                 "responseJsonSchema": _RESPONSE_SCHEMA,
             },
@@ -187,6 +187,8 @@ class GeminiAnswerGenerator:
                 code = "authentication_failed"
             elif response.status_code == 400:
                 code = "invalid_request"
+            elif response.status_code == 404:
+                code = "model_unavailable"
             elif response.status_code >= 500:
                 code = "provider_unavailable"
             else:

@@ -41,7 +41,12 @@ def _as_scored_json(answer: GeneratedAnswer | None) -> str:
     return json.dumps(value, ensure_ascii=False)
 
 
-async def evaluate_generator(generator, cases: list[GenerationCase]) -> dict[str, Any]:
+async def evaluate_generator(
+    generator,
+    cases: list[GenerationCase],
+    *,
+    request_interval_seconds: float = 0,
+) -> dict[str, Any]:
     """Evaluate a generator using document aliases so grounding stays measurable."""
     results: list[dict[str, Any]] = []
     for case_number, case in enumerate(cases, 1):
@@ -81,6 +86,9 @@ async def evaluate_generator(generator, cases: list[GenerationCase]) -> dict[str
             f"score={score['score']:.3f} total_ms={total_ms:.1f}",
             flush=True,
         )
+        if case_number < len(cases) and request_interval_seconds > 0:
+            elapsed_seconds = perf_counter() - started
+            await asyncio.sleep(max(0, request_interval_seconds - elapsed_seconds))
 
     summary: dict[str, Any] = {}
     active_languages = tuple(dict.fromkeys(item["language"] for item in results))
@@ -146,7 +154,11 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
             client=client,
             model=args.model or settings.gemini_model,
         )
-        evaluation = await evaluate_generator(generator, cases)
+        evaluation = await evaluate_generator(
+            generator,
+            cases,
+            request_interval_seconds=args.request_interval_seconds,
+        )
     return {
         "schema_version": 1,
         "created_at": datetime.now(timezone.utc).isoformat(),
@@ -165,6 +177,7 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
             "provider": "gemini",
             "model": args.model or settings.gemini_model,
             "cases_per_language": args.cases_per_language,
+            "request_interval_seconds": args.request_interval_seconds,
         },
         **evaluation,
         "limitations": [
@@ -184,6 +197,7 @@ def parser() -> argparse.ArgumentParser:
     value.add_argument("--languages", nargs="+", choices=("en", "hi", "mr"), default=["en", "hi", "mr"])
     value.add_argument("--documents", type=int, default=10_000)
     value.add_argument("--cases-per-language", type=int, default=3)
+    value.add_argument("--request-interval-seconds", type=float, default=4.1)
     return value
 
 
