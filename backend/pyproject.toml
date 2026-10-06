@@ -18,7 +18,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.4,<10"]
-data = ["datasets>=3,<5"]
+data = ["datasets>=4.2,<5"]
 rag = [
     "bm25s>=0.3.12,<0.4",
     "faiss-cpu>=1.15,<2",
@@ -27,7 +27,7 @@ rag = [
 ]
 experiments = [
     "bm25s>=0.3.12,<0.4",
-    "datasets>=3,<5",
+    "datasets>=4.2,<5",
     "faiss-cpu>=1.15,<2",
     "numpy>=2,<3",
     "psutil>=7,<8",

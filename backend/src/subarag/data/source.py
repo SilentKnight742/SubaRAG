@@ -23,9 +23,19 @@ def source_files(languages: Sequence[str], splits: Sequence[str]) -> list[Source
 def stream_rows(source: SourceFile, revision: str) -> Iterator[dict[str, Any]]:
     try:
         from datasets import load_dataset
+        from pyarrow.dataset import ParquetFragmentScanOptions
     except ImportError as exc:
         raise RuntimeError("Install the data extra in your cloud runtime: pip install './backend[data]'") from exc
     url = f"https://huggingface.co/datasets/{REPO_ID}/resolve/{revision}/{source.path}"
-    # Built-in Parquet reader, no dataset repository code or entire-file download.
-    yield from load_dataset("parquet", data_files={source.split: url},
-                            split=source.split, streaming=True)
+    # Source files have giant row groups. Small record batches alone do not stop
+    # Arrow from eagerly buffering their column chunks before yielding a row.
+    scan_options = ParquetFragmentScanOptions(
+        pre_buffer=False, use_buffered_stream=True, buffer_size=64 * 1024,
+    )
+    print(f"Reading {source.path} (32-row batches, buffered reads)", flush=True)
+    yield from load_dataset(
+        "parquet", data_files={source.split: url}, split=source.split,
+        streaming=True, batch_size=32, fragment_scan_options=scan_options,
+        columns=["source_lang", "target_lang", "query_id", "passages",
+                 "Eng_Query", "Eng_Answer", "query", "Answer"],
+    )

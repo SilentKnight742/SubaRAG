@@ -57,9 +57,17 @@ python -m subarag.data prepare \
 python -m subarag.data verify /content/subarag-data-pilot/manifest.json
 ```
 
+The notebook uses fresh, uniquely named source and output folders on each run,
+so retries preserve partial work. Command output is streamed into the notebook.
+
 The bound is **1,000 rows per source file**, across four source files, not 1,000
-passages or the full dataset. Streaming may read a Parquet row group larger than
-this sample; it does not intentionally download the entire corpus. The pilot is
+passages or the full dataset. The reader uses 32-row batches, disables Arrow
+pre-buffering, enables 64 KiB buffered streams, and selects only needed columns.
+This requires `datasets>=4.2`. Small batches alone do not prevent eager reads:
+footer inspection of the pinned Hindi files found a single row group in each,
+about 1.16 GB uncompressed for validation and 9.73 GB for training. These options
+reduce eager buffering, but are not a hard process-memory cap: Parquet pages,
+dictionaries and filesystem caches still consume memory. The pilot is
 deterministic first rows, not a representative random benchmark. Inspect counts
 and rejection reasons before increasing scale. Do not assess retrieval quality
 using this sample alone.
