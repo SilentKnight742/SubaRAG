@@ -72,4 +72,5 @@ Render cannot mount a Hugging Face dataset directly. Without a configured artifa
 the API honestly reports `not_configured`.
 
 Step one is not remotely complete until the corpus is prepared, its download is
-connected, and the hosted preview is checked. RAG remains intentionally unavailable.
+connected, the three retrieval manifests and Gemini key are configured, and the
+hosted preview is checked. Until then, RAG remains intentionally unavailable.

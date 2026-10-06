@@ -3,8 +3,9 @@
 import asyncio
 from collections.abc import AsyncIterator, Callable
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from functools import partial
+from pathlib import Path
 from time import perf_counter
 from typing import Protocol, cast
 from uuid import uuid4
@@ -31,7 +32,13 @@ from ..transcription import (
     create_transcription_http_client,
 )
 from ..data.manifest import load_manifest
-from ..rag import RagEngine, RagQuery, UnavailableRagEngine
+from ..rag import (
+    RagEngine,
+    RagQuery,
+    UnavailableRagEngine,
+    build_grounded_rag_engine,
+)
+from ..rag.providers import create_generation_http_client
 from .media import (
     ALLOWED_MEDIA_TYPES,
     InspectedAudio,
@@ -74,6 +81,7 @@ class TranscriptionServiceLike(Protocol):
 
 MediaInspector = Callable[..., InspectedAudio]
 ClientFactory = Callable[[], httpx.AsyncClient]
+RagEngineBuilder = Callable[..., RagEngine]
 
 
 class ApiRequestError(ValueError):
@@ -207,6 +215,22 @@ def _build_service(
     )
 
 
+def _configured_retrieval_manifests(settings: Settings) -> dict[str, Path] | None:
+    manifests = {
+        "en": settings.retrieval_manifest_en,
+        "hi": settings.retrieval_manifest_hi,
+        "mr": settings.retrieval_manifest_mr,
+    }
+    configured = {language: path for language, path in manifests.items() if path is not None}
+    if not configured:
+        return None
+    if len(configured) != len(manifests):
+        raise RuntimeError("English, Hindi, and Marathi retrieval manifests must be configured together.")
+    if settings.gemini_api_key is None:
+        raise RuntimeError("GEMINI_API_KEY is required when retrieval manifests are configured.")
+    return cast(dict[str, Path], manifests)
+
+
 async def _read_upload(upload: StarletteUploadFile, *, max_bytes: int) -> bytes:
     content = bytearray()
     while chunk := await upload.read(UPLOAD_CHUNK_BYTES):
@@ -334,10 +358,11 @@ def create_app(
     service: TranscriptionServiceLike | None = None,
     media_inspector: MediaInspector = inspect_audio,
     client_factory: ClientFactory = create_transcription_http_client,
+    generation_client_factory: ClientFactory = create_generation_http_client,
     rag_engine: RagEngine | None = None,
+    rag_engine_builder: RagEngineBuilder = build_grounded_rag_engine,
 ) -> FastAPI:
     runtime_settings = settings or Settings()
-    engine = rag_engine or UnavailableRagEngine()
 
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
@@ -364,16 +389,32 @@ def create_app(
         )
 
         try:
-            if service is not None:
-                application.state.transcription_service = service
-                yield
-                return
+            async with AsyncExitStack() as stack:
+                if service is not None:
+                    application.state.transcription_service = service
+                else:
+                    transcription_client = await stack.enter_async_context(client_factory())
+                    application.state.transcription_service = _build_service(
+                        runtime_settings,
+                        transcription_client,
+                    )
 
-            async with client_factory() as client:
-                application.state.transcription_service = _build_service(
-                    runtime_settings,
-                    client,
-                )
+                active_engine = rag_engine
+                if active_engine is None:
+                    artifact_manifests = _configured_retrieval_manifests(runtime_settings)
+                    if artifact_manifests is None:
+                        active_engine = UnavailableRagEngine()
+                    else:
+                        generation_client = await stack.enter_async_context(
+                            generation_client_factory()
+                        )
+                        active_engine = rag_engine_builder(
+                            artifact_manifests=artifact_manifests,
+                            gemini_api_key=runtime_settings.gemini_api_key.get_secret_value(),
+                            generation_client=generation_client,
+                            gemini_model=runtime_settings.gemini_model,
+                        )
+                application.state.rag_engine = active_engine
                 yield
         finally:
             media_executor.shutdown(wait=True, cancel_futures=True)
@@ -486,16 +527,17 @@ def create_app(
     async def application_status(request: Request) -> ApplicationStatus:
         return ApplicationStatus(
             transcription=TranscriptionStatus(provider=runtime_settings.transcription_provider),
-            rag=RagStatus(status=engine.status),
+            rag=RagStatus(status=request.app.state.rag_engine.status),
             data=request.app.state.data_status,
         )
 
     @application.post("/api/queries", response_model=QueryResponse)
     async def query(query: RagQuery) -> QueryResponse | JSONResponse:
         started_at = perf_counter()
+        active_engine: RagEngine = application.state.rag_engine
         try:
             async with asyncio.timeout(runtime_settings.query_timeout_seconds):
-                result = await engine.answer(query)
+                result = await active_engine.answer(query)
         except TimeoutError:
             return _error_response(
                 status_code=504,

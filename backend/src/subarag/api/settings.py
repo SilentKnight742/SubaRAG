@@ -51,6 +51,18 @@ class Settings(BaseSettings):
         default=None,
         validation_alias="SUBARAG_DATA_MANIFEST",
     )
+    retrieval_manifest_en: Path | None = Field(
+        default=None,
+        validation_alias="SUBARAG_RETRIEVAL_MANIFEST_EN",
+    )
+    retrieval_manifest_hi: Path | None = Field(
+        default=None,
+        validation_alias="SUBARAG_RETRIEVAL_MANIFEST_HI",
+    )
+    retrieval_manifest_mr: Path | None = Field(
+        default=None,
+        validation_alias="SUBARAG_RETRIEVAL_MANIFEST_MR",
+    )
     preview_password: SecretStr | None = Field(
         default=None,
         validation_alias="SUBARAG_PREVIEW_PASSWORD",

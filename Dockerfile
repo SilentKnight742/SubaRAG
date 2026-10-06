@@ -15,7 +15,7 @@ RUN useradd --create-home --uid 1000 app
 WORKDIR /app
 COPY backend/pyproject.toml /app/backend/pyproject.toml
 COPY backend/src/ /app/backend/src/
-RUN pip install --no-cache-dir /app/backend
+RUN pip install --no-cache-dir '/app/backend[rag]'
 COPY --from=frontend --chown=1000:1000 /build/dist /app/frontend/dist
 USER 1000
 EXPOSE 7860

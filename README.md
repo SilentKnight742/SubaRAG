@@ -10,12 +10,14 @@ retrieval layer now includes multilingual E5 embeddings, exact and FAISS HNSW
 indexes, a versioned retrieval cache, extractive context compression, reproducible
 benchmarks, and a server-owned citation boundary.
 
-The default application still reports RAG as unavailable because no answer
-generator passed the first local quality and latency gate. It produces **no
-generated answer or invented citations** in that state. See the
+Gemini 3.5 Flash-Lite passed the corrected isolated generator gate and is now
+wired behind that citation boundary. The application becomes RAG-ready only
+when the Gemini key and all three checksum-verified language indexes are
+configured. With incomplete configuration it produces **no generated answer or
+invented citations**. See the
 [experiment results](docs/experiments.md) and
-[measured architecture](docs/architecture.md) for the decisions and remaining
-release gate.
+[measured architecture](docs/architecture.md) for the measured decisions and
+remaining end-to-end release gate.
 
 Data preparation runs remotely using the [Colab notebook](notebooks/prepare_data.ipynb)
 and [data guide](docs/data.md). It produces a versioned passage corpus and
@@ -29,9 +31,9 @@ Run these in separate terminals from the repository root:
 ```bash
 cd backend
 python3 -m venv .venv
-.venv/bin/pip install -e '.[dev]'
+.venv/bin/pip install -e '.[dev,rag]'
 cp .env.example .env
-# Add ELEVENLABS_API_KEY to .env using your editor.
+# Add ELEVENLABS_API_KEY and GEMINI_API_KEY using your editor.
 .venv/bin/uvicorn subarag.api:app --host 127.0.0.1 --port 8000
 ```
 
@@ -52,6 +54,12 @@ ElevenLabs is the default. To switch later, set `SUBARAG_TRANSCRIPTION_PROVIDER`
 to `sarvam`, configure `SARVAM_API_KEY`, and restart the backend. The browser uses
 the server default; it never contains provider credentials. There is no automatic
 fallback that silently sends recordings to a second provider.
+
+Grounded answers require `SUBARAG_RETRIEVAL_MANIFEST_EN`,
+`SUBARAG_RETRIEVAL_MANIFEST_HI`, and `SUBARAG_RETRIEVAL_MANIFEST_MR` to point at
+prebuilt serving manifests. Configure all three together. The backend verifies
+their checksums and embedding model before reporting RAG as ready; it never
+embeds the corpus during startup.
 
 ## API boundaries
 

@@ -1,6 +1,6 @@
 # SubaRAG backend
 
-This package exposes speech transcription and the application query API. ElevenLabs is the selected default; Sarvam remains available through a server configuration change. Retrieval and generation are deferred behind the `RagEngine` interface.
+This package exposes speech transcription and the application query API. ElevenLabs is the selected default; Sarvam remains available through a server configuration change. The measured RAG runtime uses multilingual E5, prebuilt language-specific HNSW indexes, and Gemini 3.5 Flash-Lite behind the `RagEngine` interface.
 
 The first implementation uses completed WebM recordings because both providers accept that browser-native format:
 
@@ -20,12 +20,12 @@ The local API exposes:
 
 - `POST /api/transcriptions` with an `audio` file plus optional `language` and `provider` multipart fields.
 - `GET /healthz` for readiness and configured-provider names; it never returns credentials.
-- `POST /api/queries` for validated typed/transcribed questions. The step-one engine returns `unavailable`, with no answer or citations.
+- `POST /api/queries` for validated typed/transcribed questions. It returns `unavailable` with no answer or citations until every RAG dependency is configured.
 - `GET /api/status` for selected transcription provider, prepared corpus availability, and RAG availability.
 
 Uploads are capped at 8 MiB, restricted to browser WebM/Opus or MP4/AAC audio, decoded server-side, and rejected before provider work when their measured duration exceeds 30 seconds. Browser provider overrides are disabled by default. Set `SUBARAG_ALLOW_PROVIDER_SELECTION=true` only for deliberate adapter testing. At most two provider requests run concurrently by default.
 
-`SUBARAG_FRONTEND_DIST` enables serving the compiled frontend from this process; the Docker image sets it automatically. `SUBARAG_DATA_MANIFEST` optionally points to a prepared-corpus manifest and its local shards. An invalid or incomplete configured artifact prevents startup. No corpus or index is downloaded implicitly. See the root [README](../README.md), [data guide](../docs/data.md), and [hosting guide](../docs/hosting.md).
+`SUBARAG_FRONTEND_DIST` enables serving the compiled frontend from this process; the Docker image sets it automatically. `SUBARAG_DATA_MANIFEST` optionally points to a prepared-corpus manifest and its local shards. The three `SUBARAG_RETRIEVAL_MANIFEST_*` variables enable grounded answers only when they are configured together with `GEMINI_API_KEY`. Invalid, incomplete, or checksum-failing index configuration prevents startup. No corpus or index is downloaded or rebuilt implicitly. See the root [README](../README.md), [data guide](../docs/data.md), and [hosting guide](../docs/hosting.md).
 
 Realtime partial transcripts are intentionally deferred. Both vendors' realtime APIs require PCM-style streams rather than the current MediaRecorder WebM output, so that path needs a separate browser audio-worklet design.
 
@@ -34,7 +34,7 @@ Realtime partial transcripts are intentionally deferred. Both vendors' realtime 
 ```bash
 cd backend
 python3 -m venv .venv
-.venv/bin/pip install -e '.[dev]'
+.venv/bin/pip install -e '.[dev,rag]'
 .venv/bin/python -m pytest
 ```
 
