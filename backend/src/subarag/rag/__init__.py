@@ -5,6 +5,7 @@ from .generation import (
     AnswerGenerator,
     Evidence,
     GeneratedAnswer,
+    GenerationProviderError,
     GenerationRequest,
     UngroundedAnswerError,
 )
@@ -15,6 +16,7 @@ __all__ = [
     "Citation",
     "Evidence",
     "GeneratedAnswer",
+    "GenerationProviderError",
     "GenerationRequest",
     "GroundedRagEngine",
     "RagEngine",

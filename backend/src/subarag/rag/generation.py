@@ -33,3 +33,12 @@ class AnswerGenerator(Protocol):
 
 class UngroundedAnswerError(RuntimeError):
     """Raised when a generator cites evidence it was never given."""
+
+
+class GenerationProviderError(RuntimeError):
+    """Safe, provider-neutral failure returned by a hosted generator."""
+
+    def __init__(self, message: str, *, code: str, retryable: bool = False) -> None:
+        super().__init__(message)
+        self.code = code
+        self.retryable = retryable
