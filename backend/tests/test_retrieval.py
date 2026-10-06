@@ -10,6 +10,7 @@ from subarag.retrieval import (
     ExactDenseIndex,
     FixedDenseRetriever,
     HnswDenseIndex,
+    LanguageRouterRetriever,
     RetrievalHit,
     build_hnsw_artifact,
     extract_supporting_spans,
@@ -198,6 +199,33 @@ def test_fixed_dense_retriever_is_the_cacheable_production_policy():
     assert first.telemetry.lexical_triggered is False
     assert second.telemetry.cache_hit is True
     assert embedder.calls == 1
+
+
+def test_language_router_normalizes_provider_codes_and_defaults_to_english():
+    calls = []
+
+    class FixtureRetriever:
+        def __init__(self, name):
+            self.name = name
+
+        def retrieve(self, query, language=None):
+            calls.append((self.name, query, language))
+            return self.name
+
+    router = LanguageRouterRetriever({
+        language: FixtureRetriever(language) for language in ("en", "hi", "mr")
+    })
+
+    assert router.retrieve("question", "hin-IN") == "hi"
+    assert router.retrieve("question", "mar_Deva") == "mr"
+    assert router.retrieve("question", None) == "en"
+    assert router.retrieve("question", "unsupported") == "en"
+    assert calls == [
+        ("hi", "question", "hi"),
+        ("mr", "question", "mr"),
+        ("en", "question", "en"),
+        ("en", "question", "en"),
+    ]
 
 
 def test_hnsw_artifact_round_trip_and_checksum_verification(tmp_path):

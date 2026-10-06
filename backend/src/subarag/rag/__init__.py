@@ -10,6 +10,7 @@ from .generation import (
     UngroundedAnswerError,
 )
 from .models import Citation, RagQuery, RagResult
+from .runtime import build_grounded_rag_engine
 
 __all__ = [
     "AnswerGenerator",
@@ -24,4 +25,5 @@ __all__ = [
     "RagResult",
     "UnavailableRagEngine",
     "UngroundedAnswerError",
+    "build_grounded_rag_engine",
 ]

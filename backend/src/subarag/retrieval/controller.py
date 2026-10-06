@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from time import perf_counter
+from collections.abc import Mapping
 from typing import Protocol
 
 from .cache import BoundedCache, retrieval_cache_key
@@ -14,6 +15,32 @@ from .policies import route_lexical, select_adaptive_k
 
 class Retriever(Protocol):
     def retrieve(self, query: str, language: str | None = None) -> RetrievalOutcome: ...
+
+
+LANGUAGE_ALIASES = {
+    "en": "en",
+    "eng": "en",
+    "hi": "hi",
+    "hin": "hi",
+    "mr": "mr",
+    "mar": "mr",
+}
+
+
+class LanguageRouterRetriever:
+    """Route BCP-47 and ISO language codes to immutable language indexes."""
+
+    def __init__(self, retrievers: Mapping[str, Retriever], *, default: str = "en") -> None:
+        self.retrievers = dict(retrievers)
+        if default not in self.retrievers:
+            raise ValueError("Default retrieval language is not configured")
+        self.default = default
+
+    def retrieve(self, query: str, language: str | None = None) -> RetrievalOutcome:
+        base = language.strip().lower().split("-", 1)[0].split("_", 1)[0] if language else ""
+        selected = LANGUAGE_ALIASES.get(base, self.default)
+        retriever = self.retrievers.get(selected, self.retrievers[self.default])
+        return retriever.retrieve(query, selected)
 
 
 class FixedDenseRetriever:

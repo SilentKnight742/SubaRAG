@@ -3,7 +3,7 @@
 from .artifact import load_language_artifact
 from .cache import BoundedCache, embedding_cache_key, retrieval_cache_key
 from .compression import extract_supporting_spans
-from .controller import AdaptiveRetriever, FixedDenseRetriever, Retriever
+from .controller import AdaptiveRetriever, FixedDenseRetriever, LanguageRouterRetriever, Retriever
 from .dense import ExactDenseIndex, HnswDenseIndex
 from .embedding import Embedder, SentenceTransformerEmbedder
 from .index_artifact import (
@@ -19,7 +19,8 @@ from .policies import route_lexical, select_adaptive_k
 __all__ = [
     "AdaptiveRetriever", "Bm25SparseIndex", "BoundedCache", "Document", "Embedder",
     "EvaluationQuery", "ExactDenseIndex", "HnswDenseIndex", "RetrievalHit",
-    "RetrievalOutcome", "Retriever", "FixedDenseRetriever", "LoadedRetrievalArtifact",
+    "RetrievalOutcome", "Retriever", "FixedDenseRetriever", "LanguageRouterRetriever",
+    "LoadedRetrievalArtifact",
     "SentenceTransformerEmbedder", "embedding_cache_key",
     "build_hnsw_artifact", "extract_supporting_spans", "load_hnsw_artifact",
     "load_language_artifact", "reciprocal_rank_fusion",
