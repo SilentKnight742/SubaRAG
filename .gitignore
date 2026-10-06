@@ -11,6 +11,7 @@ artifacts/
 
 # Python environments and caches
 .venv/
+.cache/
 __pycache__/
 .pytest_cache/
 

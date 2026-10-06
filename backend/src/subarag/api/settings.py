@@ -4,7 +4,7 @@ from math import isfinite
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -51,6 +51,18 @@ class Settings(BaseSettings):
         default=None,
         validation_alias="SUBARAG_DATA_MANIFEST",
     )
+    hf_token: SecretStr | None = Field(default=None, validation_alias="HF_TOKEN")
+    data_repo: str | None = Field(
+        default=None, validation_alias="SUBARAG_DATA_REPO",
+        pattern=r"^[A-Za-z0-9_-]+/[A-Za-z0-9_.-]+$",
+    )
+    data_revision: str | None = Field(
+        default=None, validation_alias="SUBARAG_DATA_REVISION", pattern=r"^[0-9a-f]{40}$",
+    )
+    data_cache_dir: Path = Field(
+        default=BACKEND_ROOT / ".cache" / "corpus",
+        validation_alias="SUBARAG_DATA_CACHE_DIR",
+    )
     retrieval_manifest_en: Path | None = Field(
         default=None,
         validation_alias="SUBARAG_RETRIEVAL_MANIFEST_EN",
@@ -77,11 +89,23 @@ class Settings(BaseSettings):
         "elevenlabs_api_key",
         "gemini_api_key",
         "preview_password",
+        "hf_token",
         mode="before",
     )
     @classmethod
     def empty_secrets_are_unset(cls, value: object) -> object:
         return None if value == "" else value
+
+    @model_validator(mode="after")
+    def complete_remote_data_configuration(self) -> "Settings":
+        if (self.data_repo is None) != (self.data_revision is None):
+            raise ValueError("Set both SUBARAG_DATA_REPO and SUBARAG_DATA_REVISION")
+        if self.data_repo is not None:
+            if self.data_manifest is not None:
+                raise ValueError("Choose a local data manifest or a remote dataset, not both")
+            if self.hf_token is None:
+                raise ValueError("HF_TOKEN is required for the private dataset")
+        return self
 
     @field_validator("max_audio_seconds")
     @classmethod

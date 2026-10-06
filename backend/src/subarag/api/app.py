@@ -32,6 +32,7 @@ from ..transcription import (
     create_transcription_http_client,
 )
 from ..data.manifest import load_manifest
+from ..data.remote import fetch_prepared_corpus
 from ..rag import (
     RagEngine,
     RagQuery,
@@ -367,6 +368,13 @@ def create_app(
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         manifest_path = runtime_settings.data_manifest
+        if runtime_settings.data_repo is not None:
+            manifest_path = await fetch_prepared_corpus(
+                repo_id=runtime_settings.data_repo,
+                revision=runtime_settings.data_revision,
+                token=runtime_settings.hf_token.get_secret_value(),
+                cache_dir=runtime_settings.data_cache_dir,
+            )
         manifest = (
             load_manifest(manifest_path, verify_files=True)
             if manifest_path is not None
