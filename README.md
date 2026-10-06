@@ -86,4 +86,7 @@ npm run build
 ```
 
 See [hosting instructions](docs/hosting.md) for the password-protected Render Free preview.
+The default Docker image downloads the pinned prepared corpus using a read-only
+`HF_TOKEN`, verifies it, and keeps RAG unavailable. It does not install or load
+embedding models. The optional `rag` Docker target is reserved for the next stage.
 Publishing and deployment are separate, explicitly authorized actions.

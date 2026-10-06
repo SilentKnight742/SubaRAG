@@ -4,7 +4,7 @@ services:
     runtime: docker
     plan: free
     region: singapore
-    branch: feature/rag-experiments
+    branch: feature/pinned-corpus-hosting
     dockerfilePath: ./Dockerfile
     autoDeployTrigger: "off"
     healthCheckPath: /healthz
@@ -13,6 +13,12 @@ services:
         value: "7860"
       - key: ELEVENLABS_API_KEY
         sync: false
+      - key: HF_TOKEN
+        sync: false
+      - key: SUBARAG_DATA_REPO
+        value: silentkirmada/SubaRAG-data
+      - key: SUBARAG_DATA_REVISION
+        value: e29f5c990a4fc0d8e05771be4007f1c6560adfc2
       - key: SUBARAG_TRANSCRIPTION_PROVIDER
         value: elevenlabs
       - key: SUBARAG_ALLOW_PROVIDER_SELECTION

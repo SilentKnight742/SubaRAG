@@ -9,9 +9,10 @@ No paid Space, GPU, database, disk, or background worker is needed for this slic
 1. Sign in to [Render](https://dashboard.render.com/) with GitHub. Do not add a
    payment method or select a paid plan. Stop if a payment is requested.
 2. After explicit permission to push and deploy, publish the
-   `feature/rag-experiments` branch. In Render, create a Blueprint from
+   `feature/pinned-corpus-hosting` branch. In Render, create a Blueprint from
    `SilentKnight742/SubaRAG`, selecting this branch and its `render.yaml`.
-3. Supply `ELEVENLABS_API_KEY` in Render's secret prompt, never in source code.
+3. Supply `ELEVENLABS_API_KEY` and the dataset-scoped read-only `HF_TOKEN` in
+   Render's secret prompts, never in source code.
    Keep the ElevenLabs account on its free allowance; do not enable paid usage.
 4. Creating the Blueprint starts the first deployment. Subsequent automatic
    deploys are disabled: manually deploy only after explicit approval.
@@ -25,6 +26,11 @@ Docker context excludes `.env`, local dependencies, Git history, and artifacts.
 The password gate covers the interface and API; only `/healthz` is public.
 For a manually created service, set a strong `SUBARAG_PREVIEW_PASSWORD` before
 exposing it. Local development leaves this optional and binds to localhost.
+
+The default Docker target is `preview`: it installs no embedding model or RAG
+extras. The existing second-stage image remains available with
+`docker build --target rag -t subarag:rag .`; it is not selected for the initial
+free deployment, and its resource requirements need separate verification.
 
 ## Free-tier limits
 
@@ -64,13 +70,32 @@ Run the [Colab notebook and data guide](data.md), then share its downloaded
 Before Colab's temporary session ends, upload the prepared manifest and shards
 to the chosen private dataset repository, excluding `_work/`.
 
-The backend supports `SUBARAG_DATA_MANIFEST` pointing to a local prepared artifact
-and validates metadata and shard sizes at startup. No artifact repository or
-access token has been supplied yet, so remote artifact download is not configured.
-That connection is the next handoff after the pilot and repository are available;
-Render cannot mount a Hugging Face dataset directly. Without a configured artifact,
-the API honestly reports `not_configured`.
+The verified pilot is in private repository `silentkirmada/SubaRAG-data` at commit
+`e29f5c990a4fc0d8e05771be4007f1c6560adfc2`. Its manifest reports 4,000 accepted
+source rows, zero rejected rows, 59,594 passages and 5,997 evaluation queries.
 
-Step one is not remotely complete until the corpus is prepared, its download is
-connected, the three retrieval manifests and Gemini key are configured, and the
-hosted preview is checked. Until then, RAG remains intentionally unavailable.
+The Blueprint sets `SUBARAG_DATA_REPO` and `SUBARAG_DATA_REVISION` to that exact
+artifact. At startup, the backend downloads only its manifest and listed shards,
+streaming each file to disk. It checks every byte count, SHA-256 and row count
+before reporting data ready. Partial downloads are not published as a cache.
+The cache is keyed by repository and commit, and revalidated on reuse. A missing
+or invalid token, incomplete configuration or corrupt artifact prevents startup;
+the app never silently serves an unverified corpus. The preview limits the
+prepared artifact to 256 MiB and downloads to three minutes. A larger corpus
+requires a separately sized serving plan, not simply raising these limits.
+
+Render's local storage is temporary; a fresh instance re-downloads the pinned
+artifact from Hugging Face. The prepared files stay on disk, not loaded wholesale
+into memory, and nothing is embedded or indexed during startup. `/api/status`
+reports `data.status: ready`; its existing `data.revision` is the upstream
+MSMARCO-XI revision, not the prepared-artifact commit above.
+
+For local development, uncomment the two remote dataset settings in `.env.example`
+when copying them into `.env`; `HF_TOKEN` alone does not trigger a download.
+Alternatively, use `SUBARAG_DATA_MANIFEST` for a local prepared artifact. Do not
+configure both sources. Without either, data remains `not_configured`.
+
+The authenticated Hub metadata check confirmed the private repository and commit.
+Step one still needs the authorized cloud deployment and hosted smoke check.
+RAG remains intentionally unavailable until the separate retrieval-artifact and
+generator configuration is ready; those are second-stage requirements.
