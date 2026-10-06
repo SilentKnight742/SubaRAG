@@ -198,3 +198,23 @@ must be rechecked on a larger end-to-end set.
 Decision: select `gemini-3.5-flash-lite` as the first hosted generator behind
 the server-owned grounding boundary. This gate isolates generation; it does not
 claim end-to-end RAG quality or time to first token from the non-streaming API.
+
+## First assembled-path smoke test
+
+The selected 10K-per-language HNSW artifacts were built from the measured E5
+embedding caches and loaded through the same checksum-verifying startup path as
+production. One corporation-definition query per language then traversed the
+HTTP API, language routing, query embedding, HNSW retrieval, extractive
+compression, Gemini, and server-side citation resolution.
+
+| Language | Result | Citations | End-to-end API latency |
+| --- | --- | ---: | ---: |
+| English | Answered | 1 | 2.87 s |
+| Hindi | Answered | 1 | 3.77 s |
+| Marathi | Answered | 1 | 1.33 s |
+
+This is a smoke test, not an end-to-end quality benchmark. The first local
+process start also had to download the E5 model and was much slower than a warm
+start. The container therefore bakes that model into its image and switches the
+Hugging Face client to offline mode at runtime; serving still never downloads or
+re-embeds the corpus.

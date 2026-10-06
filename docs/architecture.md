@@ -26,7 +26,8 @@ flowchart LR
 2. Use `intfloat/multilingual-e5-small` with its required `query:` and `passage:`
    prefixes and normalized embeddings.
 3. Load a checksum-verified, prebuilt HNSW artifact. A Space must never embed the
-   full corpus during startup.
+   full corpus during startup. The container also bakes in the E5 model so a
+   cold replica does not depend on a runtime Hugging Face download.
 4. Retrieve eight passages from the language-appropriate index. Dense retrieval
    is the default; BM25, fusion, adaptive-k, and reranking are outside this path.
 5. Extract a small number of query-relevant sentences while retaining the source
