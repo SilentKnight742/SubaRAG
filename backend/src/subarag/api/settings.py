@@ -75,6 +75,20 @@ class Settings(BaseSettings):
         default=None,
         validation_alias="SUBARAG_RETRIEVAL_MANIFEST_MR",
     )
+    retrieval_repo: str | None = Field(
+        default=None, validation_alias="SUBARAG_RETRIEVAL_REPO",
+        pattern=r"^[A-Za-z0-9_-]+/[A-Za-z0-9_.-]+$",
+    )
+    retrieval_revision: str | None = Field(
+        default=None, validation_alias="SUBARAG_RETRIEVAL_REVISION", pattern=r"^[0-9a-f]{40}$",
+    )
+    retrieval_path: str | None = Field(
+        default=None, validation_alias="SUBARAG_RETRIEVAL_PATH", pattern=r"^retrieval/[0-9a-f]{64}$",
+    )
+    retrieval_cache_dir: Path = Field(
+        default=BACKEND_ROOT / ".cache" / "retrieval",
+        validation_alias="SUBARAG_RETRIEVAL_CACHE_DIR",
+    )
     preview_password: SecretStr | None = Field(
         default=None,
         validation_alias="SUBARAG_PREVIEW_PASSWORD",
@@ -105,6 +119,20 @@ class Settings(BaseSettings):
                 raise ValueError("Choose a local data manifest or a remote dataset, not both")
             if self.hf_token is None:
                 raise ValueError("HF_TOKEN is required for the private dataset")
+        return self
+
+    @model_validator(mode="after")
+    def complete_remote_retrieval_configuration(self) -> "Settings":
+        remote = (self.retrieval_repo, self.retrieval_revision, self.retrieval_path)
+        if any(value is not None for value in remote):
+            if any(value is None for value in remote):
+                raise ValueError("Set retrieval repository, revision, and path together")
+            if any(value is not None for value in (
+                self.retrieval_manifest_en, self.retrieval_manifest_hi, self.retrieval_manifest_mr,
+            )):
+                raise ValueError("Choose local retrieval manifests or a remote bundle, not both")
+            if self.hf_token is None or self.gemini_api_key is None:
+                raise ValueError("Remote RAG requires HF_TOKEN and GEMINI_API_KEY")
         return self
 
     @field_validator("max_audio_seconds")

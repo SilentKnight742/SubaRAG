@@ -32,6 +32,7 @@ from ..transcription import (
     create_transcription_http_client,
 )
 from ..data.manifest import load_manifest
+from ..retrieval.remote import fetch_retrieval_bundle
 from ..data.remote import fetch_prepared_corpus
 from ..rag import (
     RagEngine,
@@ -410,6 +411,17 @@ def create_app(
                 active_engine = rag_engine
                 if active_engine is None:
                     artifact_manifests = _configured_retrieval_manifests(runtime_settings)
+                    if runtime_settings.retrieval_repo is not None:
+                        artifact_manifests = await fetch_retrieval_bundle(
+                            repo_id=runtime_settings.retrieval_repo,
+                            revision=runtime_settings.retrieval_revision,
+                            path=runtime_settings.retrieval_path,
+                            token=runtime_settings.hf_token.get_secret_value(),
+                            cache_dir=runtime_settings.retrieval_cache_dir,
+                            prepared_manifest=manifest_path,
+                            prepared_repo=runtime_settings.data_repo,
+                            prepared_revision=runtime_settings.data_revision,
+                        )
                     if artifact_manifests is None:
                         active_engine = UnavailableRagEngine()
                     else:

@@ -57,8 +57,37 @@ automatically consumes or deploys these new files.
 
 ## Following slice
 
-Connect immutable retrieval-bundle loading and measure a lighter query-embedding
-runtime, including all three indexes and realistic queries. The current
+Immutable retrieval-bundle loading is implemented, opt-in, using the three
+`SUBARAG_RETRIEVAL_REPO`, `SUBARAG_RETRIEVAL_REVISION`, and
+`SUBARAG_RETRIEVAL_PATH` settings. It also requires the existing read-only
+`HF_TOKEN` and a configured `GEMINI_API_KEY`; it cannot be combined with local
+retrieval manifest settings. With neither source configured, the API continues
+to report RAG unavailable.
+
+The verified pilot indexes were uploaded to private `silentkirmada/SubaRAG-data`:
+
+- Commit: `9f6d55f53b9479930613e4c849e5e834a4230d0a`
+- Path: `retrieval/e7a5c4e6bd668ccfeadbe8f2178d20f9a8570e51937d3592813af55ded2fac68`
+- E5 model commit: `614241f622f53c4eeff9890bdc4f31cfecc418b3`
+- Documents: English 19,865; Hindi 19,862; Marathi 19,867.
+- Total file bytes: 161,619,764 (154.1 MiB, excluding the bundle report).
+
+Authenticated checks verified the uploaded report fingerprint and the three
+language manifests. They did not download the full index bundle to the VM.
+The loader verifies every file before publishing its local cache, and verifies
+the cache again on reuse. It compares the index model/corpus metadata across the
+report and each language manifest. When a prepared corpus is also configured,
+its manifest fingerprint and remote provenance must match the bundle. Incomplete
+configuration, corrupt data, or download failure prevents startup. Downloads
+have a 256 MiB total file limit and five-minute timeout; errors do not expose
+authorization headers or signed URLs.
+
+The live Render configuration has **not** been changed. The default preview
+image still has no embedding runtime; these settings must not be enabled there.
+The source `.env.example` documents them as comments, not defaults.
+
+Next, measure a lighter query-embedding runtime, including all three indexes and
+realistic queries. The current
 Sentence Transformers/PyTorch path has not passed the 512 MB Render Free budget.
 Do not enable it there or buy a larger instance. If an optimized runtime cannot
 fit with headroom while preserving retrieval quality, choose another genuinely
