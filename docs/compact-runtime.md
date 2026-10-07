@@ -68,3 +68,69 @@ unchanged and investigate another free serving arrangement.
 
 The approach follows the official [ONNX Runtime quantization API](https://onnxruntime.ai/docs/performance/model-optimizations/quantization.html)
 and its [Gather quantizer](https://github.com/microsoft/onnxruntime/blob/main/onnxruntime/python/tools/quantization/operators/gather.py).
+
+## First Colab result: rejected
+
+The returned report matches source ZIP SHA-256
+`7c603a83f17d9465d46d06c803a48dcb6868434636fa0da3938c1cd6d1205e16`.
+The screen used identical frozen inputs for both runtimes (192 queries).
+
+| Measure | FP32 reference | Quantized candidate |
+| --- | ---: | ---: |
+| Peak RSS | 1322.4 MiB | 874.9 MiB |
+| English nDCG@8 | 0.75490 | 0.75786 |
+| Hindi nDCG@8 | 0.54228 | 0.53454 |
+| Marathi nDCG@8 | 0.51059 | 0.48810 |
+| English retrieval p95 | 35.88 ms | 15.95 ms |
+| Hindi retrieval p95 | 38.64 ms | 17.63 ms |
+| Marathi retrieval p95 | 47.01 ms | 18.08 ms |
+
+The candidate was faster but failed the 400 MiB memory gate and the Marathi
+quality gate (4.4% relative nDCG decrease, versus the permitted 2%). It was **not**
+uploaded or enabled. The report alone does not identify which stage caused peak
+memory or prove which quantized operator caused the quality change.
+
+## Follow-up without rebuilding or downloading
+
+Upload only `scripts/diagnose_compact_runtime.py` to the **same Colab runtime**
+that ran the compact notebook. Keep its original `WORK` variable. Run:
+
+```python
+from google.colab import files
+from pathlib import Path
+import subprocess, sys
+
+uploaded = files.upload()  # select diagnose_compact_runtime.py only
+if len(uploaded) != 1:
+    raise ValueError("Upload just the diagnostic script.")
+script = next(iter(uploaded))  # accepts Colab-renamed filenames
+subprocess.run([sys.executable, "-u", script, "--work", str(WORK)],
+               env=child_env, check=True)
+report = max(Path(WORK).glob("memory-diagnostic-*/memory-diagnostic.json"),
+             key=lambda path: path.stat().st_mtime)
+files.download(str(report))
+```
+
+The script launches isolated processes for three measurements:
+
+1. The current candidate, recording RSS/high-water marks after imports, ONNX
+   session creation, tokenizer parsing, document loading, native index loading,
+   and short/long query execution.
+2. The same candidate with the tokenizer loaded before the ONNX session. This
+   tests transient allocation overlap without changing numerical precision.
+3. Matrix-only quantization built from the existing `e5-fp32.onnx`, retaining the
+   full-precision embedding table. Matrix quantization parameters stay unchanged
+   to isolate the effect of embedding-table quantization on Marathi quality.
+   This larger model is diagnostic, not a proposed free-tier deployment.
+
+All three reuse the exact frozen queries and indexes, with no repeat export or
+model download. The new model and reports go in a unique diagnostic directory;
+original `candidate.json`, `reference.json`, model files, and indexes are untouched.
+Child processes use offline mode and no HF token. Share `memory-diagnostic.json`
+and keep the runtime open. If that runtime has been lost, stop and report that
+instead of restarting the entire build automatically.
+
+Stage snapshots cannot be summed into exact component sizes: allocator reuse,
+temporary native buffers, and retained memory affect RSS. We use them to locate
+large increases, not to claim precise ownership or container safety. The new
+report keeps the original failed result and unchanged quality thresholds.
