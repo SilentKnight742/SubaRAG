@@ -96,6 +96,9 @@ Alternatively, use `SUBARAG_DATA_MANIFEST` for a local prepared artifact. Do not
 configure both sources. Without either, data remains `not_configured`.
 
 The authenticated Hub metadata check confirmed the private repository and commit.
-Step one still needs the authorized cloud deployment and hosted smoke check.
+Step one is deployed at `https://subarag.onrender.com`: health returned 200,
+unauthenticated status returned 401, and the user verified authenticated data
+readiness and the voice-to-transcript loop on the hosted app.
 RAG remains intentionally unavailable until the separate retrieval-artifact and
 generator configuration is ready; those are second-stage requirements.
+The next offline step is the [Colab serving-index build](rag-indexes.md).

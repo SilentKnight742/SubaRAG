@@ -60,6 +60,10 @@ Grounded answers require `SUBARAG_RETRIEVAL_MANIFEST_EN`,
 prebuilt serving manifests. Configure all three together. The backend verifies
 their checksums and embedding model before reporting RAG as ready; it never
 embeds the corpus during startup.
+Build the pinned pilot's English/Hindi/Marathi indexes remotely with the
+[Colab serving-index guide](docs/rag-indexes.md) and
+[notebook](notebooks/build_rag_indexes.ipynb). Index preparation does not enable
+RAG on the live preview; serving memory and quality checks remain separate.
 
 ## API boundaries
 
