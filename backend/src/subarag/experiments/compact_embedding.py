@@ -92,6 +92,7 @@ def export(work: Path) -> None:
     from transformers import AutoModel, AutoTokenizer
     from ..retrieval.embedding import SentenceTransformerEmbedder
 
+    ort.disable_telemetry_events()
     output = work / "compact-model"
     if output.exists():
         raise ValueError("Model output already exists; keep it and use a fresh work directory for a new export")

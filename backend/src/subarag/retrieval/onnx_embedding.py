@@ -27,6 +27,7 @@ class OnnxQueryEmbedder:
         import onnxruntime as ort
         from tokenizers import Tokenizer
 
+        ort.disable_telemetry_events()
         root = Path(directory).resolve()
         metadata = json.loads((root / "embedding-manifest.json").read_text())
         if (metadata.get("schema_version") != 1
