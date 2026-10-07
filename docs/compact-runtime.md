@@ -134,3 +134,64 @@ Stage snapshots cannot be summed into exact component sizes: allocator reuse,
 temporary native buffers, and retained memory affect RSS. We use them to locate
 large increases, not to claim precise ownership or container safety. The new
 report keeps the original failed result and unchanged quality thresholds.
+
+## Memory follow-up result: still rejected
+
+The returned diagnostic matches script SHA-256
+`64eb0a0ecf815175470556c2844613f978e11fc193264d4e87892fc4f33e89f2`.
+
+| Variant | Peak RSS | Marathi nDCG change vs reference |
+| --- | ---: | ---: |
+| Original compact runtime | 876.6 MiB | -4.4% |
+| Load tokenizer first | 778.2 MiB | -4.4% |
+| Keep embedding table FP32 | 1127.9 MiB | -6.8% |
+
+In the original load order, RSS rose approximately 268 MiB when loading the
+tokenizer and another 188 MiB while loading documents/indexes. Long queries
+increased peak memory further. These are stage deltas, not exact owned sizes.
+Load order alone does not meet the memory gate. Restoring embedding-table
+precision did not recover Marathi quality, so that quantization step cannot
+be assumed to be the sole cause. The live preview remains unchanged.
+
+## Full-precision and tokenizer comparison
+
+Upload only `scripts/check_onnx_parity.py` into the **same** Colab runtime. This
+uses the retained `e5-fp32.onnx`, saved reference vectors, frozen queries, and
+existing indexes; no export, model download, credentials, or index rebuild.
+
+```python
+from google.colab import files
+from pathlib import Path
+import subprocess, sys
+
+uploaded = files.upload()  # select check_onnx_parity.py only
+if len(uploaded) != 1:
+    raise ValueError("Upload just the comparison script.")
+subprocess.run([sys.executable, "-u", next(iter(uploaded)), "--work", str(WORK)],
+               env=child_env, check=True)
+report = max(Path(WORK).glob("onnx-parity-*/onnx-parity-report.json"),
+             key=lambda path: path.stat().st_mtime)
+files.download(str(report))
+```
+
+The script compares FP32 ONNX embeddings and top-8 retrieval against the saved
+Sentence Transformers reference on all 192 frozen queries, alongside the
+original quantized candidate. Per-language cosine similarity, vector errors,
+ranking agreement, and nDCG help distinguish pre-quantization differences
+from quantization effects. High cosine alone does not guarantee equal rankings.
+
+Two isolated tokenizer processes check exact token IDs and attention masks
+between the saved raw tokenizer and cached pinned Hugging Face AutoTokenizer,
+including 11 additional whitespace, Unicode, special-token, and long-input
+cases. This checks that boundary, not every Sentence Transformers preprocessing
+detail or universal equivalence. Tokenizer vocabulary and processing metadata
+are recorded to guide a later lighter implementation; no replacement is made
+before its own exact-token comparison. Missing cached files stop the check
+instead of downloading anything. Heavy tokenizer-wrapper imports never enter
+the separate inference measurement process.
+
+New artifacts go into a unique `onnx-parity-*` folder. The FP32 graph is hardlinked
+there when supported (copied otherwise); no writes are made to the graph.
+Original input/report/tokenizer/model hashes are checked before and after.
+Share `onnx-parity-report.json` and keep Colab open. This is diagnostic work,
+not a new serving candidate or permission to upload/deploy.
