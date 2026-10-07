@@ -195,3 +195,67 @@ there when supported (copied otherwise); no writes are made to the graph.
 Original input/report/tokenizer/model hashes are checked before and after.
 Share `onnx-parity-report.json` and keep Colab open. This is diagnostic work,
 not a new serving candidate or permission to upload/deploy.
+
+## Full-precision comparison result: quality preserved
+
+The returned report matches script SHA-256
+`c9c9d79bf20c5b636a4ae65afc14bd9ea84157b23e0044cd87f4d56ea50a3cc0`
+and the original frozen input fingerprint. FP32 ONNX returned identical ordered
+top-8 results for all 192 queries, with unchanged per-language nDCG. Token IDs
+and attention masks matched the pinned AutoTokenizer on all 203 checks.
+This isolates the observed Marathi loss to the quantized runtime on this screen,
+not the FP32 export or that tokenizer boundary. FP32 still used 1295.6 MiB peak
+RSS; its quality pass does not solve hosting.
+
+## Lighter tokenizer screen
+
+`scripts/check_light_tokenizer.py` tests a different in-memory representation of
+the same vocabulary. It converts the saved Unigram vocabulary and scores into a
+SentencePiece binary, preserving IDs. A tiny Rust tokenizer retains the original
+normalizer and pre-tokenizer; it does not load the 250,002-entry Rust Unigram
+model. SentencePiece receives already normalized/split pieces with its own
+normalization disabled. Added special tokens, boundary tokens, and right
+truncation at 512 remain explicit. This is experimental, not a claim of universal
+equivalence or a selected serving adapter.
+
+The implementation uses the official
+[SentencePiece model schema](https://github.com/google/sentencepiece/blob/master/src/sentencepiece_model.proto),
+[Python encoding API](https://github.com/google/sentencepiece/blob/master/python/README.md),
+and Hugging Face [normalizer](https://huggingface.co/docs/tokenizers/api/normalizers)
+and [pre-tokenizer](https://huggingface.co/docs/tokenizers/api/pre-tokenizers) APIs.
+
+In the **same Colab runtime**, run the following new cell and upload only
+`check_light_tokenizer.py`. The small SentencePiece package may be downloaded;
+the script itself is offline and does not fetch models, datasets, or credentials.
+Existing protobuf/tokenizers/ONNX packages from the notebook are reused.
+
+```python
+from google.colab import files
+from pathlib import Path
+import subprocess, sys
+
+subprocess.run([sys.executable, "-m", "pip", "install", "sentencepiece==0.2.1"],
+               check=True)
+uploaded = files.upload()
+if len(uploaded) != 1:
+    raise ValueError("Upload only check_light_tokenizer.py.")
+subprocess.run([sys.executable, "-u", next(iter(uploaded)), "--work", str(WORK)],
+               env=child_env, check=True)
+report = max(Path(WORK).glob("light-tokenizer-*/light-tokenizer-report.json"),
+             key=lambda path: path.stat().st_mtime)
+files.download(str(report))
+```
+
+Conversion, original tokenization, candidate tokenization, and full inference
+run in separate processes. The screen compares all 192 frozen queries, 43 edge
+cases, and 200 seeded mixed-Unicode cases (435 total). Any token/mask mismatch
+rejects the candidate and skips full inference, while still producing a report.
+Only an exact pass proceeds to measure the existing uint8 model with all three
+indexes and short/512-token probes; it also checks vectors and rankings against
+the original uint8 result. The unchanged quantization still has its known Marathi
+quality failure, even if tokenizer memory improves. Preparation memory is not
+counted as inference memory, and no allocator trimming is used to hide a peak.
+
+Reports and converted tokenizer files go in a fresh `light-tokenizer-*` directory.
+Original input/report/model/tokenizer hashes are checked before and after. Share
+`light-tokenizer-report.json`; do not upload the artifacts or deploy them.
