@@ -348,3 +348,73 @@ files.download(str(report))
 Share `tokenizer-mismatch-report.json`. The diagnostic writes a unique report
 folder, verifies original files are unchanged, and does not retry full inference
 or relax the failed parity gate. No serving changes, uploads, or deployment.
+
+## Mismatch isolated and float64 replacement prepared
+
+The returned mismatch report matches diagnostic script SHA-256
+`676058399dddbba23a10164a8f95c96f74704a827f1c9fd9cb90eff341fccfc5`.
+Both core reconstructions matched their full tokenizers. The differing piece
+reduced to `?!?!?!`: the original chose `?!?` + `!` + `?!`, while SentencePiece
+chose `?!` + `?!?` + `!`. A six-entry vocabulary reproduced both outputs, even
+with identical stored scores. A local best-path replay using float64 versus
+float32 accumulation reproduced the respective choices. This identifies an
+arithmetic-dependent segmentation difference for this case, not normalization
+or storage-rounding loss alone.
+
+`scripts/check_float64_tokenizer.py` replaces only the candidate's segmenter:
+
+- Preserve vocabulary IDs and reference-runtime binary64 scores, with a
+  serialized round-trip check for every entry. Preparation captures scores from
+  the loaded reference tokenizer to avoid assuming Python and Rust JSON parsers
+  round every decimal identically; any parser differences are counted.
+- Store vocabulary strings in a compact MARISA trie and original IDs/scores in
+  a separate fixed-width table. Both are read-only memory maps. Separating binary
+  records from keys also handles embedded control characters in input safely.
+- Compute deterministic best paths with binary64 sums, left-to-right traversal,
+  strict-greater score replacement, original unknown-token fallback/fusion, and
+  no hard-coded punctuation exception or unbounded cache.
+- Reuse the previously checked normalization/special-token/truncation wrapper
+  from the hash-verified `check_light_tokenizer.py` upload. SentencePiece is not
+  imported by the new inference process.
+
+This uses [MARISA persistence and prefix lookup](https://marisa-trie.readthedocs.io/en/latest/tutorial.html)
+and follows the original [Tokenizers 0.23.2 segmentation behavior](https://github.com/huggingface/tokenizers/blob/v0.23.2/tokenizers/src/models/unigram/model.rs).
+Memory mapping is not free container memory: resident file pages still count.
+Python-side scoring may affect latency, so no memory/latency improvement is
+claimed until the real screen runs. The small local reproducer and end-to-end
+fixture pass, including the unchanged rejection path for token mismatches.
+
+In the same Colab runtime, run this new cell and upload only
+`check_float64_tokenizer.py`. Keep the earlier helper uploads and reports.
+The small MARISA package is the only new download; models and indexes are reused.
+
+```python
+from google.colab import files
+from pathlib import Path
+import subprocess, sys
+
+subprocess.run([sys.executable, "-m", "pip", "install", "marisa-trie==1.4.1"], check=True)
+uploaded = files.upload()
+if len(uploaded) != 1:
+    raise ValueError("Upload only check_float64_tokenizer.py.")
+with subprocess.Popen(
+    [sys.executable, "-u", next(iter(uploaded)), "--work", str(WORK)],
+    env=child_env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+    text=True, bufsize=1,
+) as process:
+    for line in process.stdout:
+        print(line, end="", flush=True)
+    if process.wait() != 0:
+        raise RuntimeError("Share the actual error printed above.")
+report = max(Path(WORK).glob("float64-tokenizer-*/float64-tokenizer-report.json"),
+             key=lambda path: path.stat().st_mtime)
+files.download(str(report))
+```
+
+Preparation, raw tokenization, candidate tokenization, and inference run in
+separate processes. The unchanged 435-input suite plus 64 punctuation-family
+regressions must all match (499 total). Only then run the existing full-index
+uint8 measurement, compare vectors/rankings, and report memory and latency.
+The model's separate Marathi quality failure is not fixed by this tokenizer
+change. Original files stay intact; new outputs use a `float64-tokenizer-*`
+folder. Share `float64-tokenizer-report.json`; nothing is uploaded or deployed.
