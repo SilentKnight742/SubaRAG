@@ -10,6 +10,7 @@ import argparse
 import hashlib
 import importlib.metadata
 import json
+import math
 import os
 from pathlib import Path
 import random
@@ -46,8 +47,8 @@ def memory():
 
 
 def convert(work, output):
-    # Conversion runs outside the memory measurement process. Preserve every
-    # vocabulary ID and score; only the segmentation implementation changes.
+    # Conversion runs outside the memory measurement process. Preserve IDs,
+    # report float32 score rounding, and require exact tokens before inference.
     from sentencepiece import sentencepiece_model_pb2 as pb
     data = read(work / "compact-model/tokenizer.json")
     model = data["model"]
@@ -84,13 +85,28 @@ def convert(work, output):
     proto.normalizer_spec.add_dummy_prefix = False
     proto.normalizer_spec.remove_extra_whitespaces = False
     proto.normalizer_spec.escape_whitespaces = False
+    rounding = {"target_dtype": "float32", "changed_scores": 0,
+                "max_absolute_error": 0.0, "max_relative_error": 0.0, "examples": []}
     for index, (piece, score) in enumerate(vocab):
+        if not math.isfinite(score):
+            raise ValueError(f"Non-finite source vocabulary score at ID {index}")
         kind = pb.ModelProto.SentencePiece.NORMAL
         if index == 3:
             kind = pb.ModelProto.SentencePiece.UNKNOWN
         stored = proto.pieces.add(piece=piece, score=score, type=kind)
+        if not math.isfinite(stored.score):
+            raise ValueError(f"Vocabulary score overflows float32 at ID {index}")
         if stored.score != score:
-            raise ValueError("Vocabulary score would lose precision; conversion rejected")
+            error = abs(stored.score - score)
+            rounding["changed_scores"] += 1
+            rounding["max_absolute_error"] = max(rounding["max_absolute_error"], error)
+            rounding["max_relative_error"] = max(rounding["max_relative_error"], error / abs(score))
+            if len(rounding["examples"]) < 5:
+                rounding["examples"].append({"vocabulary_id": index, "source_score": score,
+                                             "stored_score": stored.score})
+    print(f"Score conversion: {rounding['changed_scores']}/{len(vocab)} rounded to float32; "
+          f"maximum absolute change {rounding['max_absolute_error']:.9g}. "
+          "Exact token parity is still required.", flush=True)
     (output / "vocabulary.model").write_bytes(proto.SerializeToString())
     # A one-token placeholder retains only the original normalizer and
     # pre-tokenizer. Its model is never used for segmentation.
@@ -101,6 +117,7 @@ def convert(work, output):
     write(output / "light-manifest.json", {
         "source_tokenizer_sha256": digest(work / "compact-model/tokenizer.json"),
         "special_tokens": expected, "vocabulary_entries": len(vocab),
+        "score_conversion": rounding,
         "lstrip_tokens": [text for text, item in special.items() if item["lstrip"]],
         "files": {name: digest(output / name) for name in ("vocabulary.model", "pipeline.json")},
     })

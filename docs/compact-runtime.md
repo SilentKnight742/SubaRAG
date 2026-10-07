@@ -211,7 +211,8 @@ RSS; its quality pass does not solve hosting.
 
 `scripts/check_light_tokenizer.py` tests a different in-memory representation of
 the same vocabulary. It converts the saved Unigram vocabulary and scores into a
-SentencePiece binary, preserving IDs. A tiny Rust tokenizer retains the original
+SentencePiece binary, preserving IDs and recording any float32 score rounding.
+A tiny Rust tokenizer retains the original
 normalizer and pre-tokenizer; it does not load the 250,002-entry Rust Unigram
 model. SentencePiece receives already normalized/split pieces with its own
 normalization disabled. Added special tokens, boundary tokens, and right
@@ -273,3 +274,12 @@ The first conversion attempt stopped before inference because the helper assumed
 the saved flag, accepting either mask setting while retaining the other
 special-token validation and exact-output gate. Re-upload the corrected helper;
 existing models/indexes and previous diagnostic folders need no deletion.
+
+The next attempt stopped at the helper's requirement that every vocabulary score
+remain bit-exact after conversion. The saved scores do not all round-trip through
+SentencePiece's float32 score field. The diagnostic now records the number of
+changed scores, maximum absolute/relative error, and up to five numeric examples
+in `light_manifest.score_conversion`. Non-finite scores and float32 overflow
+still stop conversion. Rounding is not assumed harmless: the unchanged exact
+token-ID/attention-mask gate must pass before any full-pipeline measurement.
+Even a finite-suite pass does not prove equivalence for all possible inputs.
