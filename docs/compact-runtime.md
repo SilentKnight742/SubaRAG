@@ -283,3 +283,68 @@ in `light_manifest.score_conversion`. Non-finite scores and float32 overflow
 still stop conversion. Rounding is not assumed harmless: the unchanged exact
 token-ID/attention-mask gate must pass before any full-pipeline measurement.
 Even a finite-suite pass does not prove equivalence for all possible inputs.
+
+## Lighter tokenizer result: one mismatch, not accepted
+
+The returned report matches script SHA-256
+`b8b66f5b22ddd80be600400324b0df8b9002de4eb523f1900f76c9cb66b846f8`.
+All 192 retrieval queries and 43 edge cases matched, along with 199 of the 200
+seeded synthetic cases. `fuzz:7` differed in token order. The exact-token gate
+correctly skipped full inference; this candidate remains rejected.
+
+Tokenizer-only process peak RSS fell from 328.0 MiB to 102.4 MiB. This is not
+the full pipeline's memory use and does not establish a hosting fit. Conversion
+rounded 65,856 vocabulary scores, with maximum absolute error approximately
+3.55e-15. That small storage error alone does not identify the mismatch's cause.
+
+### Focused mismatch diagnosis (no embedding model or indexes)
+
+`scripts/diagnose_tokenizer_mismatch.py` reuses the completed failed report,
+converted tokenizer, and exact previously uploaded helper (verified by hash).
+It reproduces the synthetic input, compares core segmentation on identical
+normalized pieces, and checks that those pieces reconstruct the full tokenizer
+outputs. It then reduces a differing piece through bounded deletion checks and
+constructs a tiny vocabulary retaining every possible substring match plus
+unknown/minimum-score entries. Reduced vocabularies must reproduce both full
+models before their comparison can be interpreted.
+
+The diagnostic compares the Rust segmenter using original and float32-rounded
+scores against SentencePiece using those same rounded scores. It reports token
+pieces, IDs, scores, and cumulative path sums without changing either tokenizer.
+The implementation sources show a relevant hypothesis: [Tokenizers 0.23.2 uses
+f64 path scores](https://github.com/huggingface/tokenizers/blob/v0.23.2/tokenizers/src/models/unigram/model.rs),
+whereas [SentencePiece 0.2.1 uses float path scores](https://github.com/google/sentencepiece/blob/v0.2.1/src/unigram_model.cc).
+This numerical difference is not yet a confirmed explanation for `fuzz:7`.
+Path totals alone cannot replace examining competing segmentation decisions.
+
+In the same Colab runtime, upload only `diagnose_tokenizer_mismatch.py` with this
+cell. Keep the prior `check_light_tokenizer.py` upload (a renamed copy is fine).
+No package install, model inference, corpus/index loading, or download is required.
+Only frozen query metadata/tokenizer files and prior diagnostic reports are read;
+the report exports synthetic inputs only, not dataset query text.
+
+```python
+from google.colab import files
+from pathlib import Path
+import subprocess, sys
+
+uploaded = files.upload()
+if len(uploaded) != 1:
+    raise ValueError("Upload only diagnose_tokenizer_mismatch.py.")
+with subprocess.Popen(
+    [sys.executable, "-u", next(iter(uploaded)), "--work", str(WORK)],
+    env=child_env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+    text=True, bufsize=1,
+) as process:
+    for line in process.stdout:
+        print(line, end="", flush=True)
+    if process.wait() != 0:
+        raise RuntimeError("Share the actual error printed above.")
+report = max(Path(WORK).glob("tokenizer-mismatch-*/tokenizer-mismatch-report.json"),
+             key=lambda path: path.stat().st_mtime)
+files.download(str(report))
+```
+
+Share `tokenizer-mismatch-report.json`. The diagnostic writes a unique report
+folder, verifies original files are unchanged, and does not retry full inference
+or relax the failed parity gate. No serving changes, uploads, or deployment.
