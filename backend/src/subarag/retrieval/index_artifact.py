@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -33,6 +34,7 @@ class LoadedRetrievalArtifact:
     model_name: str
     retriever_version: str
     language: str
+    model_revision: str | None = None
 
 
 def build_hnsw_artifact(
@@ -44,8 +46,11 @@ def build_hnsw_artifact(
     model_name: str,
     retriever_version: str,
     language: str,
+    model_revision: str | None = None,
 ) -> Path:
     """Write data files first and the manifest last so partial builds are invalid."""
+    if model_revision is not None and not re.fullmatch(r"[0-9a-f]{40}", model_revision):
+        raise ValueError("Model revision must be a full commit SHA")
     output = Path(output)
     if output.exists() and any(output.iterdir()):
         raise ValueError("Retrieval artifact output must be empty")
@@ -70,6 +75,7 @@ def build_hnsw_artifact(
         "corpus_version": corpus_version,
         "retriever_version": retriever_version,
         "model_name": model_name,
+        "model_revision": model_revision,
         "language": language,
         "document_count": len(documents),
         "dimension": int(index.index.d),
@@ -106,6 +112,11 @@ def load_hnsw_artifact(
         raise ValueError("Not a SubaRAG HNSW artifact")
     if expected_model is not None and manifest.get("model_name") != expected_model:
         raise ValueError("Retrieval artifact model does not match the configured embedder")
+    revision = manifest.get("model_revision")
+    if revision is not None and (
+        not isinstance(revision, str) or not re.fullmatch(r"[0-9a-f]{40}", revision)
+    ):
+        raise ValueError("Retrieval artifact model revision must be a full commit SHA")
 
     root = manifest_path.parent
     for name in (DOCUMENTS_NAME, INDEX_NAME):
@@ -140,4 +151,5 @@ def load_hnsw_artifact(
         model_name=manifest["model_name"],
         retriever_version=manifest["retriever_version"],
         language=manifest["language"],
+        model_revision=revision,
     )

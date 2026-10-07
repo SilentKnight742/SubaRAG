@@ -18,7 +18,10 @@ class Embedder(Protocol):
 class SentenceTransformerEmbedder:
     """Load one model at a time; dependencies stay optional for the base API package."""
 
-    def __init__(self, model_name: str, *, batch_size: int = 32, device: str = "cpu") -> None:
+    def __init__(
+        self, model_name: str, *, batch_size: int = 32, device: str = "cpu",
+        revision: str | None = None,
+    ) -> None:
         try:
             from sentence_transformers import SentenceTransformer
         except ImportError as exc:
@@ -26,7 +29,8 @@ class SentenceTransformerEmbedder:
         self.name = model_name
         self.batch_size = batch_size
         self._e5 = "e5" in model_name.lower()
-        self._model = SentenceTransformer(model_name, device=device)
+        options = {"revision": revision} if revision is not None else {}
+        self._model = SentenceTransformer(model_name, device=device, **options)
         dimension = (
             self._model.get_embedding_dimension()
             if hasattr(self._model, "get_embedding_dimension")

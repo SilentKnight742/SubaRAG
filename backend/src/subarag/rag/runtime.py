@@ -42,7 +42,12 @@ def build_grounded_rag_engine(
         if artifact.language != language:
             raise ValueError(f"Retrieval artifact language does not match {language}")
 
-    embedder = embedder_factory(embedding_model, batch_size=1, device="cpu")
+    revisions = {artifact.model_revision for artifact in artifacts.values()}
+    if len(revisions) != 1:
+        raise ValueError("Retrieval artifacts must use the same embedding model revision")
+    revision = revisions.pop()
+    options = {"revision": revision} if revision is not None else {}
+    embedder = embedder_factory(embedding_model, batch_size=1, device="cpu", **options)
     dimensions = {artifact.index.index.d for artifact in artifacts.values()}
     if dimensions != {embedder.dimension}:
         raise ValueError("Retrieval artifacts do not match the embedder dimension")
