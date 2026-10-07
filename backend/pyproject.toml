@@ -18,6 +18,12 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.4,<10"]
+compact = [
+    "faiss-cpu>=1.15,<2",
+    "numpy>=2,<3",
+    "onnxruntime>=1.22,<2",
+    "tokenizers>=0.21,<1",
+]
 data = ["pyarrow>=21,<26", "fsspec[http]>=2025.3,<2027"]
 rag = [
     "bm25s>=0.3.12,<0.4",
