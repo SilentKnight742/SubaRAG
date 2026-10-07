@@ -62,8 +62,9 @@ def convert(work, output):
         item = special[text]
         if (item["id"] != index or vocab[index][0] != text or not item["special"]
                 or item["normalized"] or item["single_word"] or item["rstrip"]
-                or item["lstrip"] != (text == "<mask>")):
-            raise ValueError("Unsupported special-token behavior")
+                or not isinstance(item["lstrip"], bool)
+                or (text != "<mask>" and item["lstrip"])):
+            raise ValueError(f"Unsupported special-token behavior for {text}: {item}")
     if data["post_processor"]["single"] != [
         {"SpecialToken": {"id": "<s>", "type_id": 0}},
         {"Sequence": {"id": "A", "type_id": 0}},
@@ -100,6 +101,7 @@ def convert(work, output):
     write(output / "light-manifest.json", {
         "source_tokenizer_sha256": digest(work / "compact-model/tokenizer.json"),
         "special_tokens": expected, "vocabulary_entries": len(vocab),
+        "lstrip_tokens": [text for text, item in special.items() if item["lstrip"]],
         "files": {name: digest(output / name) for name in ("vocabulary.model", "pipeline.json")},
     })
 
@@ -115,6 +117,7 @@ class LightTokenizer:
         self.pipeline = Tokenizer.from_file(str(output / "pipeline.json"))
         self.processor = spm.SentencePieceProcessor(model_file=str(output / "vocabulary.model"))
         self.special = metadata["special_tokens"]
+        self.lstrip_tokens = frozenset(metadata["lstrip_tokens"])
         self.pattern = re.compile("(" + "|".join(re.escape(key) for key in self.special) + ")")
         self.max_length = 512
 
@@ -132,7 +135,7 @@ class LightTokenizer:
             if part in self.special:
                 ids.append(self.special[part])
                 continue
-            if index + 1 < len(parts) and parts[index + 1] == "<mask>":
+            if index + 1 < len(parts) and parts[index + 1] in self.lstrip_tokens:
                 part = part.rstrip()
             normalized = self.pipeline.normalizer.normalize_str(part) if self.pipeline.normalizer else part
             pieces = self.pipeline.pre_tokenizer.pre_tokenize_str(normalized)

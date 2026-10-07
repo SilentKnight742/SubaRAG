@@ -239,8 +239,15 @@ subprocess.run([sys.executable, "-m", "pip", "install", "sentencepiece==0.2.1"],
 uploaded = files.upload()
 if len(uploaded) != 1:
     raise ValueError("Upload only check_light_tokenizer.py.")
-subprocess.run([sys.executable, "-u", next(iter(uploaded)), "--work", str(WORK)],
-               env=child_env, check=True)
+with subprocess.Popen(
+    [sys.executable, "-u", next(iter(uploaded)), "--work", str(WORK)],
+    env=child_env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+    text=True, bufsize=1,
+) as process:
+    for line in process.stdout:
+        print(line, end="", flush=True)
+    if process.wait() != 0:
+        raise RuntimeError("Diagnostic failed; share the actual error printed above.")
 report = max(Path(WORK).glob("light-tokenizer-*/light-tokenizer-report.json"),
              key=lambda path: path.stat().st_mtime)
 files.download(str(report))
@@ -259,3 +266,10 @@ counted as inference memory, and no allocator trimming is used to hide a peak.
 Reports and converted tokenizer files go in a fresh `light-tokenizer-*` directory.
 Original input/report/model/tokenizer hashes are checked before and after. Share
 `light-tokenizer-report.json`; do not upload the artifacts or deploy them.
+
+The first conversion attempt stopped before inference because the helper assumed
+`<mask>` had `lstrip=True`. Inspection of the actual saved tokenizer confirmed
+`lstrip=False` for all five special tokens. The helper now records and follows
+the saved flag, accepting either mask setting while retaining the other
+special-token validation and exact-output gate. Re-upload the corrected helper;
+existing models/indexes and previous diagnostic folders need no deletion.
