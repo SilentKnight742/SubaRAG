@@ -89,6 +89,8 @@ The source `.env.example` documents them as comments, not defaults.
 Next, measure a lighter query-embedding runtime, including all three indexes and
 realistic queries. The current
 Sentence Transformers/PyTorch path has not passed the 512 MB Render Free budget.
+The [compact-runtime Colab screen](compact-runtime.md) prepares and measures an
+experimental ONNX candidate without changing those serving defaults.
 Do not enable it there or buy a larger instance. If an optimized runtime cannot
 fit with headroom while preserving retrieval quality, choose another genuinely
 free serving arrangement before deployment. Larger-corpus and end-to-end answer
