@@ -686,3 +686,85 @@ Share `inference-memory-report.json`. Original files remain intact; new reports
 use a unique `inference-memory-*` folder. Process RSS includes instrumentation
 overhead and excludes container-wide accounting and concurrent workloads. OS
 file caches are not cleared. There is no automatic upload or promotion.
+
+## Allocator passes memory screen; matrix-quantization quality comparison
+
+The returned allocator report matches helper SHA-256
+`cf88c2b249e519c1023c04b16243d9bbcf2d68198607b80a4798017449738389`.
+Control peaked at 457.0 MiB, requested-size allocation at 350.9 MiB, and the
+shrink-after-run variant at 348.6 MiB. Both allocator variants preserved every
+inference output, frozen embedding, and retrieval ranking, including the
+512-token probes. Both passed memory and latency gates, but neither passed
+Marathi quality. Carry the non-shrinking requested-size allocator forward for
+experiments: shrinkage saved only about 2 MiB and was slower for long inference
+and switching in this run. This remains a process-level Colab screen, not a
+deployment guarantee.
+
+`scripts/check_quantization_quality.py` makes two bounded comparisons against a
+fresh original-uint8 control, using the passing allocator in every process:
+
+- `per-channel`: quantize matrix weights per output channel instead of one scale
+  for an entire weight tensor. Keep unsigned 8-bit types and full quantization
+  range; do not change the embedding tables.
+- `fp32-matrices`: retain the original FP32 matrix weights and quantize only
+  Gather embedding tables. This is the converse of the earlier matrix-only
+  quantization experiment; its larger model may fail memory but helps distinguish
+  matrix quantization loss from embedding-table loss.
+
+This follows [ONNX Runtime's quantization/debugging guidance](https://onnxruntime.ai/docs/performance/model-optimizations/quantization.html).
+Conversion starts from the existing `e5-fp32.onnx`, not a new model download or
+PyTorch export. Graph audits require quantized Gather nodes, weights, scales,
+and zero points to match the original uint8 model. Per-channel matrix scale
+shapes/counts are checked; FP32 matrix tensor bytes, shapes, and types must match
+the saved original graph. Storage-only protobuf flags are not tensor values and
+are excluded from that FP32 tensor comparison.
+
+Each conversion and each inference measurement runs in its own child process;
+conversion's memory cannot contaminate inference's peak. Candidate manifests
+and tokenizer hashes are checked before redirecting only the model file loaded
+by the verified adapter. Pooling, prefix, dimension, tokenizer, 512-token ceiling,
+disk documents, existing indexes, and one-index residency remain unchanged.
+Original files are checksum-verified before and after. New models/reports go
+under a unique `quantization-quality-*` folder.
+
+A changed quantizer may change embeddings and rankings: those differences are
+reported rather than rejected merely for disagreeing with the weaker uint8
+baseline. Every language must still retain at least 98% of its FP32 reference
+nDCG@8, with the 400 MiB and 500 ms retrieval p95 gates unchanged. Repeated
+language-switch results must match that candidate's own initial results. The
+192 reused queries are development data; any promising candidate still needs
+independent evaluation before we claim a general quality improvement.
+
+The local tiny-model fixture passed control, both actual conversions, graph
+audits, full-length probes, switching consistency, and original-file checks.
+This checks the experiment's wiring, not real multilingual model quality or
+hosting fit. The live application and deployment configuration are unchanged.
+
+In the current Colab runtime, upload only `check_quantization_quality.py` using
+the cell below. Keep `check_inference_memory.py` and the earlier helper uploads.
+There are no new installations, credentials, model downloads, or passage-index
+rebuilds. It does create two new local model variants, so conversion will take
+longer than the preceding settings-only checks.
+
+```python
+from google.colab import files
+from pathlib import Path
+import sys
+
+uploaded = files.upload()
+if len(uploaded) != 1:
+    raise ValueError("Upload only check_quantization_quality.py.")
+run_logged(
+    [sys.executable, "-u", next(iter(uploaded)), "--work", str(WORK)],
+    env=child_env,
+)
+report = max(
+    Path(WORK).glob("quantization-quality-*/quantization-quality-report.json"),
+    key=lambda path: path.stat().st_mtime,
+)
+files.download(str(report))
+```
+
+Share `quantization-quality-report.json`. Candidate errors are recorded rather
+than replaced with fallback settings; control errors stop the experiment.
+Nothing is automatically uploaded, deployed, or selected for serving.
