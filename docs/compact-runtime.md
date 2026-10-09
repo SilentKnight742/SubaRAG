@@ -552,3 +552,60 @@ Wait for both browser downloads to finish. Keep
 `SubaRAG-private-checkpoint.tar.gz` on the device; share only the small
 `checkpoint-report.json` and confirm the archive downloaded. A successful Colab
 archive verification alone does not prove the browser download completed.
+
+## Checkpoint verified; profile the remaining peak
+
+The downloaded checkpoint contains 107 files and is 537,621,418 bytes. Its local
+SHA-256 matches the Colab verification report:
+`4e014739505d92bf6213fa099d26917e0aff0cca08ef97d74f700e8fa39afad7`.
+It preserves `/content/subarag-compact-rdjzfmcy` and records the original source
+path. Keep this private archive; no cloud upload or production promotion occurred.
+
+`scripts/profile_query_memory.py` reuses the hash-verified disk helper and its
+one-index stores. It adds before/after RSS and process high-water measurements
+around imports, compact-tokenizer loading, encoder/session construction,
+tokenization, ONNX inference, index access, and search/document reads. It repeats
+the existing schedule unchanged: three warmups, 192 frozen queries, six long
+probes alternating with six short probes, and nine language-switch requests.
+The profile records encoded token counts and phase labels, not query text.
+The 512-token ceiling, model, indexes, and quality limits are unchanged.
+
+Before running, the helper verifies prior source/store checksums. It redirects
+the reused helper's output into a new `query-memory-*` directory rather than
+overwriting its previous measurement, then checks vectors, ordered rankings,
+mixed-language rankings, and original hashes again. No new dependencies,
+downloads, model export, index rebuild, or credentials are required.
+
+The tiny local fixture passed with exact vectors/rankings, unchanged originals,
+one resident index, correct request counts, and all six long probes still
+encoding to 512 tokens. These tiny-fixture measurements are not real-model
+memory results. Instrumentation adds overhead, so this is not a latency
+benchmark. Nested phase windows overlap: their peak increments must not be
+summed as component sizes. A high-water increase locates a peak in time but
+does not identify the responsible ONNX operator or prove container safety.
+
+In the same Colab runtime, upload only `profile_query_memory.py` with this cell.
+Keep the earlier three helper uploads and the existing `WORK` and `child_env`.
+If the runtime has reset, stop and restore the saved checkpoint first.
+
+```python
+from google.colab import files
+from pathlib import Path
+import sys
+
+uploaded = files.upload()
+if len(uploaded) != 1:
+    raise ValueError("Upload only profile_query_memory.py.")
+run_logged(
+    [sys.executable, "-u", next(iter(uploaded)), "--work", str(WORK)],
+    env=child_env,
+)
+report = max(
+    Path(WORK).glob("query-memory-*/query-memory-report.json"),
+    key=lambda path: path.stat().st_mtime,
+)
+files.download(str(report))
+```
+
+Share `query-memory-report.json`. The known Marathi quantization loss remains a
+separate unresolved gate; profiling memory neither fixes nor waives it.
