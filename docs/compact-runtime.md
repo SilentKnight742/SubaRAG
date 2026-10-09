@@ -418,3 +418,73 @@ uint8 measurement, compare vectors/rankings, and report memory and latency.
 The model's separate Marathi quality failure is not fixed by this tokenizer
 change. Original files stay intact; new outputs use a `float64-tokenizer-*`
 folder. Share `float64-tokenizer-report.json`; nothing is uploaded or deployed.
+
+## Float64 result and disk-backed retrieval screen
+
+The returned float64 report matches script SHA-256
+`4d4e39bf27366b93e05963d0e9debca53901afb19b83d981428197f9de8424a1`.
+All 499 tokenization checks passed, and all 192 query embeddings and ordered
+rankings matched the original uint8 candidate. Tokenizer-only peak RSS fell
+from 328.9 to 40.4 MiB. Full-pipeline peak was still **566.6 MiB**, above both
+the 400 MiB screening target and the free host's 512 MiB limit. Per-language
+retrieval p95 was approximately 18–24 ms. The unchanged quantized model still
+lost about 4.4% Marathi nDCG against the full-precision reference; the tokenizer
+fix does not resolve that separate quality gate.
+
+`scripts/check_disk_retrieval.py` now screens document/index residency separately:
+
+- Convert each existing document JSONL into a new SQLite store, preserving and
+  checking every original byte payload and its index position. Reads materialize
+  only matched documents; evaluation's ID scan streams records.
+- Measure disk-backed documents with all three original HNSW indexes loaded.
+- Measure the same stores with only one language's index retained, releasing the
+  previous index before loading another. No vectors or indexes are rebuilt.
+- Compare all frozen embeddings and ordered rankings, and time nine additional
+  interleaved-language requests including encoding, index switching, search,
+  and document reads. Recheck original file hashes after both runs.
+
+The one-index variant is a sequential diagnostic, not a concurrent server
+implementation. Its first request includes lazy index loading; its startup
+number therefore does not represent the same readiness point as eager loading.
+OS file caches are not cleared, and validation/ID scans warm files: this is not
+a cold-disk benchmark. Process RSS alone does not establish container fit;
+filesystem caches and concurrent requests need separate validation. Memory and
+latency results must pass without relaxing the existing quality gate.
+
+The tiny local end-to-end fixture passed for both variants: document contents,
+metadata and order, embeddings, rankings, language switches, index-count bounds,
+and unchanged original files. Its memory/timings are not evidence of real-corpus
+hosting fit. Production serving code is unchanged.
+
+In the **same Colab runtime**, keep `WORK`, `child_env`, earlier helper uploads,
+and the completed float64 run. No installs, model downloads, index rebuilds,
+credentials, or uploads to Hugging Face are needed. If that runtime/files are
+gone, stop and report it instead of rebuilding automatically.
+
+Run this cell and upload only `check_disk_retrieval.py`:
+
+```python
+from google.colab import files
+from pathlib import Path
+import subprocess, sys
+
+uploaded = files.upload()
+if len(uploaded) != 1:
+    raise ValueError("Upload only check_disk_retrieval.py.")
+with subprocess.Popen(
+    [sys.executable, "-u", next(iter(uploaded)), "--work", str(WORK)],
+    env=child_env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+    text=True, bufsize=1,
+) as process:
+    for line in process.stdout:
+        print(line, end="", flush=True)
+    if process.wait() != 0:
+        raise RuntimeError("Share the actual error printed above.")
+report = max(Path(WORK).glob("disk-retrieval-*/disk-retrieval-report.json"),
+             key=lambda path: path.stat().st_mtime)
+files.download(str(report))
+```
+
+Share `disk-retrieval-report.json`. New stores and reports stay in a unique
+`disk-retrieval-*` directory; the source corpus, model, indexes, and previous
+reports remain intact. Nothing is pushed, uploaded, or deployed by this helper.
