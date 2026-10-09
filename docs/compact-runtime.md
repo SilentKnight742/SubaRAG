@@ -488,3 +488,67 @@ files.download(str(report))
 Share `disk-retrieval-report.json`. New stores and reports stay in a unique
 `disk-retrieval-*` directory; the source corpus, model, indexes, and previous
 reports remain intact. Nothing is pushed, uploaded, or deployed by this helper.
+
+## Disk-backed result and restart checkpoint
+
+The returned disk report matches script SHA-256
+`5ebc4544ae6b4ad5b692c00ce4b6c0f15901f14c395899c6cb7c39f7f0b6d63d`.
+In the rebuilt runtime, the float64 baseline peaked at 577.2 MiB. Disk documents
+with all indexes peaked at 524.5 MiB; retaining one index peaked at 455.0 MiB.
+Both preserved all 192 embeddings and ordered rankings, all document payloads,
+and the interleaved-query rankings. One-index grouped retrieval p95 was 13–17 ms;
+the nine-query language-switch screen had p95 114.2 ms. Neither meets the 400 MiB
+memory target, and the unchanged model still fails Marathi's quality threshold.
+
+The next index-load event after long-query probes records a peak increase from
+339.1 to 455.0 MiB in the one-index process. Long-query inference is a plausible
+contributor, not a proven isolated cause; stage-level profiling is still needed.
+No serving changes or relaxed limits follow from this report.
+
+Before further experiments, `scripts/checkpoint_colab.py` saves a private local
+checkpoint outside `WORK`. It includes all experiment model/index/store/report
+files, the extracted backend Python source and package metadata, and the three
+hash-verified tokenizer/retrieval helpers. The archive records original paths
+and installed package versions, verifies every archived file's checksum, and
+checks that inputs did not change during backup. Unknown experiment file types
+and symlinks stop the backup for inspection rather than being silently followed.
+It does not collect environment variables, environment files, account caches,
+or the installed Python environment. No package installation, credential prompt,
+model execution, or cloud upload is involved.
+
+Keep the archive private: it includes private dataset text. Do not commit it to
+GitHub or attach the large archive in chat. A local tiny-fixture round trip,
+checksum-corruption rejection, and environment/cache exclusions passed; the real
+archive must still be downloaded and retained by the user. Recording dependency
+versions is not a guarantee that a future Colab image will reproduce that Python
+environment automatically. Restoration must preserve the recorded work/source
+paths because existing reports contain absolute paths.
+
+In the current Colab notebook, add a new cell and upload only
+`checkpoint_colab.py`. Use the existing `run_logged`, `WORK`, and `child_env`:
+
+```python
+from google.colab import files
+from pathlib import Path
+import json, sys
+
+uploaded = files.upload()
+if len(uploaded) != 1:
+    raise ValueError("Upload only checkpoint_colab.py.")
+run_logged(
+    [sys.executable, "-u", next(iter(uploaded)), "--work", str(WORK)],
+    env=child_env,
+)
+report = max(
+    Path(WORK).parent.glob("subarag-checkpoint-*/checkpoint-report.json"),
+    key=lambda path: path.stat().st_mtime,
+)
+details = json.loads(report.read_text())
+files.download(details["archive"])
+files.download(str(report))
+```
+
+Wait for both browser downloads to finish. Keep
+`SubaRAG-private-checkpoint.tar.gz` on the device; share only the small
+`checkpoint-report.json` and confirm the archive downloaded. A successful Colab
+archive verification alone does not prove the browser download completed.
