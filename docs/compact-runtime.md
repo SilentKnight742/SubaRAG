@@ -609,3 +609,80 @@ files.download(str(report))
 
 Share `query-memory-report.json`. The known Marathi quantization loss remains a
 separate unresolved gate; profiling memory neither fixes nor waives it.
+
+## Long-query peak isolated; allocator settings screen
+
+The returned query-memory report matches profiler SHA-256
+`5f092db8661f3a40c8ee3b02d903cf8912c695dc18f4f1210379e861c0309544`.
+Session construction and all 192 frozen queries stayed within a 339.4 MiB
+process peak. Those queries reached at most 26 encoded tokens. The 512-token
+probes raised the observed high-water mark to about 443.1 MiB during ONNX
+inference. Tokenization and index access introduced no new peak in this run.
+This identifies the phase, not an individual operator or exact allocation.
+All frozen vectors and rankings remained identical. Later high-water readings
+were slightly lower; subsequent screens retain the maximum observed reading
+rather than assuming the final snapshot captures every observed peak.
+
+`scripts/check_inference_memory.py` compares three isolated child processes:
+
+1. Control: existing non-arena CPU allocation and disabled memory-pattern cache.
+2. Requested-size arena: registered CPU arena, `arena_extend_strategy=1`
+   (`kSameAsRequested`), `max_dead_bytes_per_chunk=256`.
+3. The same arena, with unused arena regions eligible for release after each
+   inference via the `memory.enable_memory_arena_shrinkage=cpu:0` run option.
+
+The controls follow the official [allocator and shrinkage documentation](https://onnxruntime.ai/docs/get-started/with-c.html),
+[Python allocator API](https://onnxruntime.ai/docs/api/python/api_summary.html#allocators),
+and [arena configuration definitions](https://github.com/microsoft/onnxruntime/blob/main/include/onnxruntime/core/framework/allocator.h).
+The arena's `max_mem=0` uses the runtime default; it is not a process-memory cap.
+Sharing an environment allocator here configures a single session per child,
+not multiple concurrent sessions. Shrinkage can affect retained memory and
+latency; it is not assumed to reduce transient peaks.
+
+All variants retain the same graph optimization, precision, model bytes,
+tokenizer, 512-token limit, one-index policy, and sequential query schedule.
+Memory-pattern caching remains disabled. Each executes all 216 model requests
+and verifies that all six long probes still reach 512 tokens. Output hashes,
+shapes, and encoded lengths for every request are compared to the fresh control,
+including long inputs and language switching. The 192 frozen embeddings and
+ordered rankings also compare against the original uint8 baseline. The original
+2% per-language quality, 400 MiB memory, and 500 ms retrieval p95 gates remain.
+A memory pass cannot override the existing Marathi failure.
+
+The tiny local end-to-end fixture passed all three settings, with unchanged
+outputs, rankings, original hashes, and a single resident index. An initial
+zero-byte splitting threshold caused a local allocator failure and is not used;
+the verified configuration uses 256 bytes. Fixture memory does not establish
+real-model fit. Non-control execution failures are reported, never silently
+replaced with other settings. A failed control stops the screen. No application
+code or deployment configuration changes are made.
+
+Run this new cell in the same Colab runtime, uploading only
+`check_inference_memory.py`. Keep the previous helper uploads and profile
+artifacts. No installs, model downloads, index rebuilds, or credentials are needed.
+If the runtime has reset, stop and restore the private checkpoint first; the
+later memory profile may need rerunning, but the model need not be rebuilt.
+
+```python
+from google.colab import files
+from pathlib import Path
+import sys
+
+uploaded = files.upload()
+if len(uploaded) != 1:
+    raise ValueError("Upload only check_inference_memory.py.")
+run_logged(
+    [sys.executable, "-u", next(iter(uploaded)), "--work", str(WORK)],
+    env=child_env,
+)
+report = max(
+    Path(WORK).glob("inference-memory-*/inference-memory-report.json"),
+    key=lambda path: path.stat().st_mtime,
+)
+files.download(str(report))
+```
+
+Share `inference-memory-report.json`. Original files remain intact; new reports
+use a unique `inference-memory-*` folder. Process RSS includes instrumentation
+overhead and excludes container-wide accounting and concurrent workloads. OS
+file caches are not cleared. There is no automatic upload or promotion.
