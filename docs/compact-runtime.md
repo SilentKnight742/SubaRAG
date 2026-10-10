@@ -926,7 +926,7 @@ if "child_env" not in globals() or "run_logged" not in globals():
     raise RuntimeError("Use the session with the completed checkpoint-restore cell.")
 os.chdir("/content")
 uploaded = files.upload()
-main_hash = "7455432697b4d92b1bafa55eec0273cceb5d56f7efdeb0f33496d8c65f8b4741"
+main_hash = "92ad1be0da7e11a32d3848cf447a2458003e310794c5f6846cebc5dcdf0fef22"
 expected = {
     main_hash,
     "5c4df33a42d92fcd1aa796506c88c5de5b71b6769047051d45994dde74d34775",
@@ -949,3 +949,67 @@ finally:
 Share `onnx-preprocessing-report.json` and any errors printed above it. Keep the
 runtime open. Even a passing screen does not automatically select or deploy the
 candidate; independent quality and memory-limited serving checks remain necessary.
+
+### Explicit retry for the symbolic-shape failure
+
+The first real run (`onnx-preprocessing-3i6u1wj8`) reproduced the original uint8
+vectors/rankings exactly, peaked at 361.7 MiB, and left original files unchanged.
+Marathi still showed a 4.4% quality loss, exceeding the 2% allowance. The FP32 reference completed, but
+strict preprocessing stopped with `unsupported broadcast between Min(512,
+sequence) sequence` / `Incomplete symbolic shape inference`. No preprocessed
+FP32 comparison or new uint8 quality result exists from that run.
+
+The source of the failure is symbolic dimension unification, not a SIGKILL or
+missing dependency. With sequence length at most 512, `Min(512, sequence)` equals
+`sequence`. ONNX Runtime's
+[symbolic shape-inference implementation](https://github.com/microsoft/onnxruntime/blob/main/onnxruntime/python/tools/symbolic_shape_infer.py)
+provides `auto_merge` for unresolved broadcast dimensions. This is a diagnostic
+assumption, not a generally safe rewrite for unrestricted inputs: other symbolic
+merges may also occur. Keep all FP32 numerical/ranking gates and the existing
+512-token truncation contract. The revised helper additionally requires unchanged
+input types and dynamic dimension declarations after preprocessing.
+
+Use the new explicit `--auto-merge` option for this retry. The default remains
+strict; there is no silent fallback and no preprocessing stage is skipped. The
+option is recorded in the report and forwarded to child processes. A tiny
+Slice/Add graph reproduced the same strict failure locally; the merge variant
+passed the complete synthetic harness and exact-output checks at lengths 1–512.
+That verifies the retry machinery, not the real E5 graph or its retrieval quality.
+
+For this known failure, use the cell below rather than rerunning the strict-mode
+cell above. Upload **only the updated `check_onnx_preprocessing.py`**; the other
+helpers remain in `/content`. Duplicate upload names are accepted by checksum.
+It makes a fresh experiment folder and repeats the control/reference checks; it
+does not export/download a model or rebuild indexes. Keep the earlier output.
+
+```python
+from google.colab import files
+from pathlib import Path
+import hashlib, os, sys
+
+if "WORK" not in globals() or not Path(WORK).is_dir():
+    raise RuntimeError("Restored runtime missing. Stop here; do not rebuild.")
+if "child_env" not in globals() or "run_logged" not in globals():
+    raise RuntimeError("Use the session with the completed restore cell.")
+os.chdir("/content")
+uploaded = files.upload()
+expected = "92ad1be0da7e11a32d3848cf447a2458003e310794c5f6846cebc5dcdf0fef22"
+if len(uploaded) != 1:
+    raise ValueError("Upload only the updated check_onnx_preprocessing.py.")
+script = next(iter(uploaded))
+if hashlib.sha256(uploaded[script]).hexdigest() != expected:
+    raise ValueError("This is not the updated helper. Select its latest local copy.")
+del uploaded
+pattern = "onnx-preprocessing-*/onnx-preprocessing-report.json"
+before = set(WORK.glob(pattern))
+try:
+    run_logged([sys.executable, "-u", script, "--work", str(WORK), "--auto-merge"],
+               env=child_env)
+finally:
+    reports = set(WORK.glob(pattern)) - before
+    if len(reports) == 1:
+        files.download(str(reports.pop()))
+```
+
+Share the new report and any errors. No push, upload, deployment, or serving
+change is part of this correction.

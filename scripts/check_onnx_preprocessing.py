@@ -60,6 +60,10 @@ def graph_summary(path):
         "sha256": digest(path), "bytes": path.stat().st_size, "onnx_version": onnx.__version__,
         "operators": dict(Counter(node.op_type for node in model.graph.node)),
         "value_info_count": len(model.graph.value_info),
+        "inputs": {item.name: {"type": item.type.tensor_type.elem_type,
+                    "shape": [dim.dim_param if dim.HasField("dim_param") else dim.dim_value
+                              for dim in item.type.tensor_type.shape.dim]}
+                   for item in model.graph.input},
         "preprocessing_marker": any(item.key == "onnx.quant.pre_process" and item.value == "onnxruntime.quant"
                                     for item in model.metadata_props),
         "uint8_gathers": sum(node.op_type == "Gather" and node.input[0] in tensors
@@ -68,7 +72,7 @@ def graph_summary(path):
     }
 
 
-def prepare(work, output, mode):
+def prepare(work, output, mode, *, auto_merge=False):
     import onnxruntime as ort
     ort.disable_telemetry_events()
     destination = output / mode / "model"
@@ -79,6 +83,8 @@ def prepare(work, output, mode):
         shutil.copy2(source, model)
     elif mode == "fp32-preprocessed":
         from onnxruntime.quantization.shape_inference import quant_pre_process
+        if auto_merge and read(work / "compact-model/embedding-manifest.json")["max_length"] != 512:
+            raise ValueError("Shape-merge experiment requires the existing 512-token contract")
         # Actually perform all three stages. Never add the marker ourselves or
         # silently retry with a stage disabled just to remove the warning.
         errors = []
@@ -96,7 +102,7 @@ def prepare(work, output, mode):
             quant_pre_process(
                 input_model=str(source), output_model_path=str(model),
                 skip_optimization=False, skip_symbolic_shape=False, skip_onnx_shape=False,
-                auto_merge=False, guess_output_rank=False, save_as_external_data=False,
+                auto_merge=auto_merge, guess_output_rank=False, save_as_external_data=False,
             )
         finally:
             logger.removeFilter(capture)
@@ -116,6 +122,12 @@ def prepare(work, output, mode):
     else:
         raise ValueError("Control does not need preparation")
     audit = graph_summary(model)
+    if mode == "fp32-preprocessed":
+        original_audit = read(output / "fp32-original/graph-audit.json")
+        if audit["inputs"] != original_audit["inputs"]:
+            raise ValueError("Preprocessing changed input types or dynamic dimensions")
+        audit["auto_merge"] = auto_merge
+        audit["input_contract_unchanged"] = True
     if mode != "fp32-original" and not audit["preprocessing_marker"]:
         raise ValueError("Expected preprocessing metadata is missing")
     if mode == "preprocessed-uint8" and (not audit["uint8_gathers"]
@@ -219,7 +231,7 @@ def sources(work):
     return prior, tracked
 
 
-def run(work):
+def run(work, *, auto_merge=False):
     quality = helper()
     quality.helper().helper().tokenizer_helper().load_helper()  # Check all five helper hashes up front.
     prior, tracked = sources(work)
@@ -233,7 +245,9 @@ def run(work):
               "quality_helper_sha256": QUALITY_SHA, "source_sha256": {str(p): h for p, h in tracked.items()},
               "variants": {}, "status": "running",
               "preprocessing": {"symbolic_shape_inference": True, "basic_graph_optimization": True,
-                                "onnx_shape_inference": True, "auto_merge": False},
+                                "onnx_shape_inference": True, "auto_merge": auto_merge,
+                                "supported_sequence_length": "tokenizer-truncated to at most 512",
+                                "selection": "Explicit caller option; no automatic fallback"},
               "limitation": "Reused development queries, not held-out evaluation. Sequential process RSS is not a container/concurrency guarantee. FP32 measurements retain raw outputs for comparison; uint8 measurements do not. No automatic selection, uploads, index rebuild, or serving changes."}
     report_path = output / "onnx-preprocessing-report.json"
     try:
@@ -242,8 +256,11 @@ def run(work):
             write(output / mode / "screen-inputs.json", {"disk_report": str(prior)})
             for stage in (("measure",) if mode == "control" else ("prepare", "measure")):
                 print(f"Starting {mode}: {stage}", flush=True)
-                process = subprocess.run([sys.executable, "-u", str(Path(__file__).resolve()), "--work", str(work),
-                                          "--output", str(output), "--mode", mode, "--child", stage], env=env)
+                command = [sys.executable, "-u", str(Path(__file__).resolve()), "--work", str(work),
+                           "--output", str(output), "--mode", mode, "--child", stage]
+                if auto_merge:
+                    command.append("--auto-merge")
+                process = subprocess.run(command, env=env)
                 if process.returncode:
                     report["variants"][mode] = {"status": "failed", "stage": stage, "exit_code": process.returncode}
                     raise RuntimeError(f"{mode} {stage} failed; keep the files and share the error above.")
@@ -281,10 +298,15 @@ if __name__ == "__main__":
     parser.add_argument("--output", type=Path)
     parser.add_argument("--mode", choices=MODES)
     parser.add_argument("--child", choices=("prepare", "measure"))
+    parser.add_argument("--auto-merge", action="store_true",
+                        help="Explicit symbolic-shape merge experiment; retains all numerical gates")
     args = parser.parse_args()
     if args.child:
         if args.output is None or args.mode is None:
             parser.error("Child mode requires --output and --mode")
-        (prepare if args.child == "prepare" else measure)(args.work, args.output, args.mode)
+        if args.child == "prepare":
+            prepare(args.work, args.output, args.mode, auto_merge=args.auto_merge)
+        else:
+            measure(args.work, args.output, args.mode)
     else:
-        run(args.work.resolve())
+        run(args.work.resolve(), auto_merge=args.auto_merge)
