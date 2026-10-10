@@ -768,3 +768,90 @@ files.download(str(report))
 Share `quantization-quality-report.json`. Candidate errors are recorded rather
 than replaced with fallback settings; control errors stop the experiment.
 Nothing is automatically uploaded, deployed, or selected for serving.
+
+## Resume after a runtime reset
+
+The private checkpoint archive is still verified locally against SHA-256
+`4e014739505d92bf6213fa099d26917e0aff0cca08ef97d74f700e8fa39afad7`.
+It contains 107 files (922,318,380 bytes unpacked) through the disk-retrieval
+screen, not the later allocator/quantization variants. Later downloaded reports
+remain evidence of those experiments; missing candidate model files must not be
+treated as restored. The latest matrix-quality run rejected both alternatives:
+per-channel had 6.68% Marathi loss at 356.6 MiB; full-precision matrices had
+2.98% Marathi loss at 450.1 MiB. The next agreed comparison is explicit ONNX
+preprocessing, with FP32 parity checked before quantization, in response to the
+preprocessing warning. Do not silently suppress that warning or loosen gates.
+
+`scripts/restore_colab_checkpoint.py` is pinned to this exact archive's size and
+checksum. It stages and verifies every file before restoring original absolute
+work/source paths, preserving references inside the saved reports. It rejects
+unsafe paths, links, duplicates, and conflicting existing files. Identical files
+can be reused on a repeat restore. Verified staging files are published without
+overwriting existing files, then the restored files are checked again. Temporary
+staging is removed; the uploaded archive is retained.
+
+The helper's optional `--install` reinstalls the required application, ONNX,
+tokenizer, and index libraries from recorded versions, not the entire Colab
+environment. No Torch/model download, Hugging Face token, index rebuild, or
+model execution is involved. The checkpoint recorded stale duplicate metadata
+for NumPy (1.26.4 and 2.1.3) and packaging (24.0 and 26.3): restoration explicitly
+selects 2.1.3 and 26.3 and records that choice. NumPy 2 satisfies the archived
+project requirement. This does not prove which duplicate was active previously;
+resumed experiments still need a fresh numerical control. Imports and installed
+versions are checked in a fresh child interpreter after installation.
+
+Local tiny-archive checks passed checksum round trip, repeat restore, conflict
+refusal, unsafe path/symlink rejection, and corrupt-file rejection. Dependency
+command wiring was checked without installing the Colab environment on the
+developer VM. Actual installation/import validation occurs in Colab and stops
+with an error if the recorded versions cannot be installed or imported.
+
+In a fresh free CPU runtime, keep the existing notebook. Do not rerun the original
+setup/export cells. Add this cell and select both `restore_colab_checkpoint.py`
+and the private `SubaRAG-private-checkpoint.tar.gz` when prompted. The upload is
+about 513 MiB; leave the browser connected until restoration completes.
+
+```python
+from google.colab import files
+from pathlib import Path
+import json, os, subprocess, sys
+
+def run_logged(arguments, *, env=None):
+    with subprocess.Popen(
+        arguments, env=env, stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT, text=True, bufsize=1,
+    ) as process:
+        for line in process.stdout:
+            print(line, end="", flush=True)
+        if process.wait() != 0:
+            raise RuntimeError("Stop and share the error above; keep the restored files.")
+
+uploaded = files.upload()
+scripts = [name for name in uploaded if name.endswith(".py")]
+archives = [name for name in uploaded if name.endswith(".gz")]
+if len(uploaded) != 2 or len(scripts) != 1 or len(archives) != 1:
+    raise ValueError("Upload only the restore helper and private checkpoint archive.")
+del uploaded
+run_logged([sys.executable, "-u", scripts[0], "--archive", archives[0], "--install"])
+
+report = max(Path("/content").glob("subarag-restore-*/restore-report.json"),
+             key=lambda path: path.stat().st_mtime)
+state = json.loads(report.read_text())
+if not state.get("imports_checked"):
+    raise RuntimeError("Dependency checks did not finish; share the output above.")
+WORK = Path(state["work"])
+backend = Path(state["backend"])
+child_env = dict(os.environ, PYTHONPATH=str(backend / "src"),
+                 OMP_NUM_THREADS="1", OPENBLAS_NUM_THREADS="1",
+                 TOKENIZERS_PARALLELISM="false", HF_HUB_OFFLINE="1",
+                 TRANSFORMERS_OFFLINE="1")
+child_env.pop("HF_TOKEN", None)
+print("Restored WORK:", WORK)
+files.download(str(report))
+```
+
+Share `restore-report.json` before starting another experiment. Keep the private
+archive on the device. Neither restoration nor installation uploads to Hugging
+Face or changes the live app. If installation fails after restoration, preserve
+the restored files: they do not need to be reuploaded or rebuilt to fix a library
+installation problem.
