@@ -1,4 +1,4 @@
-"""Experimental E5 query encoder: tokenizers + ONNX Runtime, without PyTorch."""
+"""E5 query encoder for experiments and opt-in compact serving, without PyTorch."""
 
 from __future__ import annotations
 
@@ -6,6 +6,22 @@ import hashlib
 import json
 from pathlib import Path
 from collections.abc import Sequence
+from threading import Lock
+
+
+_allocator_lock = Lock()
+_allocator_registered = False
+
+
+def _register_requested_allocator(ort):
+    global _allocator_registered
+    with _allocator_lock:
+        if not _allocator_registered:
+            info = ort.OrtMemoryInfo("Cpu", ort.OrtAllocatorType.ORT_ARENA_ALLOCATOR, 0, ort.OrtMemType.DEFAULT)
+            ort.create_and_register_allocator(info, ort.OrtArenaCfg({
+                "max_mem": 0, "arena_extend_strategy": 1, "max_dead_bytes_per_chunk": 256,
+            }))
+            _allocator_registered = True
 
 
 def file_sha256(path: Path) -> str:
@@ -19,10 +35,11 @@ def file_sha256(path: Path) -> str:
 class OnnxQueryEmbedder:
     """One query at a time; the exported graph owns mean pooling and L2 normalization.
 
-    Not selected by application settings until the remote memory/quality gate passes.
+    Compact serving is explicitly configured; the default preview stays unchanged.
     """
 
-    def __init__(self, directory: str | Path, *, expected_revision: str) -> None:
+    def __init__(self, directory: str | Path, *, expected_revision: str,
+                 tokenizer=None, requested_arena: bool = False) -> None:
         import numpy as np
         import onnxruntime as ort
         from tokenizers import Tokenizer
@@ -48,17 +65,26 @@ class OnnxQueryEmbedder:
         options.inter_op_num_threads = 1
         options.enable_cpu_mem_arena = False
         options.enable_mem_pattern = False
+        if requested_arena:
+            _register_requested_allocator(ort)
+            options.enable_cpu_mem_arena = True
+            options.add_session_config_entry("session.use_env_allocators", "1")
+        if tokenizer is not None and tokenizer.source_tokenizer_sha256 != metadata["files"]["tokenizer.json"]["sha256"]:
+            raise ValueError("Compact tokenizer belongs to a different encoder")
         self.session = ort.InferenceSession(
             str(root / "model.onnx"), sess_options=options, providers=["CPUExecutionProvider"],
         )
         if {item.name for item in self.session.get_inputs()} != {"input_ids", "attention_mask"}:
             raise ValueError("Unexpected ONNX model inputs")
-        self.tokenizer = Tokenizer.from_file(str(root / "tokenizer.json"))
+        self.tokenizer = tokenizer if tokenizer is not None else Tokenizer.from_file(str(root / "tokenizer.json"))
         self.tokenizer.no_padding()
         self.tokenizer.enable_truncation(max_length=metadata["max_length"])
         self.name = metadata["model_name"]
         self.dimension = metadata["dimension"]
         self._np = np
+
+    def close(self):
+        self.session = None
 
     def embed_queries(self, texts: Sequence[str]):
         np = self._np

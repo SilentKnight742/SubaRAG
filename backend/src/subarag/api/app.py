@@ -41,6 +41,7 @@ from ..rag import (
     build_grounded_rag_engine,
 )
 from ..rag.providers import create_generation_http_client
+from ..rag.runtime import build_compact_rag_engine
 from .media import (
     ALLOWED_MEDIA_TYPES,
     InspectedAudio,
@@ -388,6 +389,7 @@ def create_app(
         application.state.transcription_slots = asyncio.Semaphore(
             runtime_settings.max_concurrent_transcriptions
         )
+        application.state.query_slots = asyncio.Semaphore(1)
         media_executor = ThreadPoolExecutor(
             max_workers=MEDIA_INSPECTION_WORKERS,
             thread_name_prefix="subarag-media",
@@ -409,6 +411,15 @@ def create_app(
                     )
 
                 active_engine = rag_engine
+                if active_engine is None and runtime_settings.compact_manifest is not None:
+                    generation_client = await stack.enter_async_context(generation_client_factory())
+                    active_engine = build_compact_rag_engine(
+                        compact_manifest=runtime_settings.compact_manifest,
+                        gemini_api_key=runtime_settings.gemini_api_key.get_secret_value(),
+                        generation_client=generation_client,
+                        gemini_model=runtime_settings.gemini_model,
+                    )
+                    stack.callback(active_engine.close)
                 if active_engine is None:
                     artifact_manifests = _configured_retrieval_manifests(runtime_settings)
                     if runtime_settings.retrieval_repo is not None:
@@ -555,9 +566,13 @@ def create_app(
     async def query(query: RagQuery) -> QueryResponse | JSONResponse:
         started_at = perf_counter()
         active_engine: RagEngine = application.state.rag_engine
+        if application.state.query_slots.locked() or getattr(active_engine, "busy", False):
+            return _error_response(status_code=503, code="query_busy",
+                                   message="Another question is being answered. Please try again shortly.", retryable=True)
         try:
-            async with asyncio.timeout(runtime_settings.query_timeout_seconds):
-                result = await active_engine.answer(query)
+            async with application.state.query_slots:
+                async with asyncio.timeout(runtime_settings.query_timeout_seconds):
+                    result = await active_engine.answer(query)
         except TimeoutError:
             return _error_response(
                 status_code=504,

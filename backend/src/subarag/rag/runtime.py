@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
 
 import httpx
 
@@ -19,6 +20,17 @@ from .providers import GeminiAnswerGenerator
 
 DEFAULT_EMBEDDING_MODEL = "intfloat/multilingual-e5-small"
 SUPPORTED_LANGUAGES = ("en", "hi", "mr")
+
+
+def build_compact_rag_engine(*, compact_manifest: Path, gemini_api_key: str,
+                             generation_client: httpx.AsyncClient, gemini_model: str) -> GroundedRagEngine:
+    from ..retrieval.compact import CompactRetriever
+    retriever = CompactRetriever(compact_manifest)
+    return GroundedRagEngine(
+        retriever=retriever,
+        generator=GeminiAnswerGenerator(api_key=gemini_api_key, client=generation_client, model=gemini_model),
+        retrieval_executor=ThreadPoolExecutor(max_workers=1, thread_name_prefix="subarag-retrieval"),
+    )
 
 
 def build_grounded_rag_engine(

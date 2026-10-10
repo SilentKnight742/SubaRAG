@@ -36,5 +36,12 @@ USER 1000
 RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('intfloat/multilingual-e5-small')"
 ENV HF_HUB_OFFLINE=1
 
+# Opt-in compact image. Artifacts are mounted separately; no model download at build time.
+FROM runtime AS compact
+USER root
+RUN pip install --no-cache-dir '/app/backend[compact]'
+USER 1000
+ENV HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 TOKENIZERS_PARALLELISM=false
+
 # Default build target, including on Render.
 FROM runtime AS preview

@@ -89,6 +89,7 @@ class Settings(BaseSettings):
         default=BACKEND_ROOT / ".cache" / "retrieval",
         validation_alias="SUBARAG_RETRIEVAL_CACHE_DIR",
     )
+    compact_manifest: Path | None = Field(default=None, validation_alias="SUBARAG_COMPACT_MANIFEST")
     preview_password: SecretStr | None = Field(
         default=None,
         validation_alias="SUBARAG_PREVIEW_PASSWORD",
@@ -133,6 +134,17 @@ class Settings(BaseSettings):
                 raise ValueError("Choose local retrieval manifests or a remote bundle, not both")
             if self.hf_token is None or self.gemini_api_key is None:
                 raise ValueError("Remote RAG requires HF_TOKEN and GEMINI_API_KEY")
+        return self
+
+    @model_validator(mode="after")
+    def complete_compact_configuration(self) -> "Settings":
+        if self.compact_manifest is not None:
+            if self.gemini_api_key is None:
+                raise ValueError("Compact RAG requires GEMINI_API_KEY")
+            if self.retrieval_repo is not None or any(path is not None for path in (
+                self.retrieval_manifest_en, self.retrieval_manifest_hi, self.retrieval_manifest_mr,
+            )):
+                raise ValueError("Choose a compact bundle or full-size retrieval configuration, not both")
         return self
 
     @field_validator("max_audio_seconds")

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from collections.abc import Callable
 from typing import Literal, Protocol
 
@@ -45,17 +47,39 @@ class GroundedRagEngine:
         generator: AnswerGenerator,
         compressor: Callable = extract_supporting_spans,
         max_context_tokens: int = 500,
+        retrieval_executor: ThreadPoolExecutor | None = None,
     ) -> None:
         self.retriever = retriever
         self.generator = generator
         self.compressor = compressor
         self.max_context_tokens = max_context_tokens
+        self.retrieval_executor = retrieval_executor
+        self._retrieval_future = None
+
+    @property
+    def busy(self) -> bool:
+        # A timed-out await cannot stop native inference already in progress.
+        return self._retrieval_future is not None and not self._retrieval_future.done()
+
+    def close(self):
+        if self.retrieval_executor is not None:
+            self.retrieval_executor.shutdown(wait=True, cancel_futures=True)
+        close = getattr(self.retriever, "close", None)
+        if close is not None:
+            close()
 
     async def answer(self, query: RagQuery) -> RagResult:
-        # Local query embedding is a short, measured CPU operation. Keeping it
-        # in-process avoids copying the model into worker processes; generation
-        # remains asynchronous because it is normally remote I/O.
-        outcome = self.retriever.retrieve(query.question, query.language)
+        if self.retrieval_executor is None:
+            outcome = self.retriever.retrieve(query.question, query.language)
+        else:
+            # Keep HTTP/health checks responsive during CPU inference without
+            # a second model process. Retriever locking covers cancelled awaits.
+            if self.busy:
+                raise RuntimeError("Retrieval is still running")
+            self._retrieval_future = self.retrieval_executor.submit(
+                self.retriever.retrieve, query.question, query.language,
+            )
+            outcome = await asyncio.wrap_future(self._retrieval_future)
         if not outcome.hits:
             return RagResult(
                 status="no_answer",
