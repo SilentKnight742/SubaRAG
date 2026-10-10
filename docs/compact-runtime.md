@@ -1013,3 +1013,87 @@ finally:
 
 Share the new report and any errors. No push, upload, deployment, or serving
 change is part of this correction.
+
+## One-table quantization isolation
+
+The shape-merge run completed successfully: all 216 FP32 outputs were within
+tolerance (maximum absolute difference about 1.25e-7), with identical ordered
+rankings and unchanged input dimensions. Its preprocessed uint8 model peaked at
+369.1 MiB, with ordinary retrieval p95 of 24–27 ms and switching p95 of 82.6 ms.
+The full-length 512-token inference p95 was 609.9 ms; the ordinary-query latency
+gate is not a guarantee that every request finishes within 500 ms. Relative
+nDCG@8 changes were English +0.39%, Hindi -1.55%, Marathi -4.13%. Thus Marathi
+still fails the 2% quality-loss allowance. No candidate was promoted.
+
+`scripts/check_embedding_tables.py` isolates the three embedding tables using
+the completed preprocessed graph. This follows the
+[ONNX quantization-debugging approach](https://onnxruntime.ai/docs/performance/model-optimizations/quantization.html#quantization-debugging)
+of comparing an unchanged quantized baseline with selected weights restored to
+full precision. It does not assume that the word table is the cause.
+
+Four fresh-process runs use the same float64 tokenizer, disk documents, one
+resident index, requested-size allocator, and frozen query/stress schedule:
+
+1. A byte-identical copy of the completed preprocessed uint8 model. All output
+   hashes, frozen vectors, and rankings must reproduce the previous run before
+   any table intervention starts. Recheck memory and ordinary-query latency.
+2. Restore only the position embedding table to FP32.
+3. Restore only the token-type embedding table to FP32.
+4. Restore only the word embedding table to FP32. This larger model may exceed
+   the 400 MiB gate; it is a diagnostic, not a proposed deployment workaround.
+
+Each intervention starts from the same uint8 graph, not the preceding variant.
+It restores the exact original Gather node and FP32 initializer, removes that
+Gather's dequantizer and unused quantized weight/scale/zero-point, then verifies
+every unrelated node and initializer remains byte-identical. Unexpected names,
+shared tensors, altered Gather structure, or dequantizer boundaries fail rather
+than triggering a guessed rewrite. No matrices are re-quantized. Model rewriting
+and graph inspection run outside the measured processes.
+
+The report shows quality relative to FP32 and changes from the preprocessed
+uint8 control, with memory and latency for each intervention. Table effects can
+interact with downstream quantized matrices; their changes are not an additive
+allocation of quality loss. The 192 development queries still are not a holdout.
+Original model/index/store hashes are checked before and after the run.
+
+The tiny three-table synthetic pipeline completed locally through every variant,
+including the one-table byte-preservation checks, long inputs, and switching
+schedule. This verifies the helper mechanics, not the real model's quality.
+No application code or defaults changed, and no push/deployment is implied.
+
+In the existing Colab runtime, add this cell and upload **only
+`scripts/check_embedding_tables.py`**. Keep the preprocessing results and helper
+uploads. No credentials, library installation, model download, index rebuild,
+or new full-precision export is needed.
+
+```python
+from google.colab import files
+from pathlib import Path
+import hashlib, os, sys
+
+if "WORK" not in globals() or not Path(WORK).is_dir():
+    raise RuntimeError("Runtime missing. Stop here; do not rebuild.")
+if "child_env" not in globals() or "run_logged" not in globals():
+    raise RuntimeError("Use the session with the completed restore cell.")
+os.chdir("/content")
+uploaded = files.upload()
+expected = "0fa3f32749925823f12ff530ddc8224842d66d36a1c81ad4065c61f4f42bb3ee"
+if len(uploaded) != 1:
+    raise ValueError("Upload only check_embedding_tables.py.")
+script = next(iter(uploaded))
+if hashlib.sha256(uploaded[script]).hexdigest() != expected:
+    raise ValueError("Select the latest local copy of the linked helper.")
+del uploaded
+pattern = "embedding-tables-*/embedding-table-report.json"
+before = set(WORK.glob(pattern))
+try:
+    run_logged([sys.executable, "-u", script, "--work", str(WORK)], env=child_env)
+finally:
+    reports = set(WORK.glob(pattern)) - before
+    if len(reports) == 1:
+        files.download(str(reports.pop()))
+```
+
+Share `embedding-table-report.json` and any errors. Keep all existing files and
+the runtime open. A failed quality gate is a result to inspect, not permission
+to weaken the threshold or deploy the variant.
