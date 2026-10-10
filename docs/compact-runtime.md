@@ -855,3 +855,97 @@ archive on the device. Neither restoration nor installation uploads to Hugging
 Face or changes the live app. If installation fails after restoration, preserve
 the restored files: they do not need to be reuploaded or rebuilt to fix a library
 installation problem.
+
+## Resumed control and ONNX preprocessing screen
+
+The restored checkpoint passed all 107 file checks, required-library installation,
+and fresh-process import checks, with the same Python version. It restores the
+disk-retrieval experiment, not the later allocator/quantization variants. The new
+`scripts/check_onnx_preprocessing.py` starts directly from those restored artifacts;
+there is no need to recreate the missing experimental models first.
+
+This diagnostic follows ONNX Runtime's
+[preprocessing guidance](https://onnxruntime.ai/docs/performance/model-optimizations/quantization.html):
+symbolic shape inference, basic graph optimization, then ONNX shape inference on
+a separate FP32 copy. It does not insert a metadata marker itself or suppress
+warnings. Logged preprocessing errors also fail the stage, because the upstream
+helper can catch an optimizer exception and continue with a partially processed
+model. There is no automatic retry with stages disabled.
+
+The fresh-process stages are:
+
+1. Restore control: reproduce the saved uint8 vectors and rankings exactly using
+   the previously selected requested-size allocator, disk documents, float64
+   tokenizer, and one resident index. Recheck runtime gates, including all six
+   512-token probes. The known Marathi quality failure does not block this
+   control; a numerical, memory, or latency regression does.
+2. Measure the saved FP32 graph and its preprocessed copy separately. Compare all
+   216 raw outputs (192 development queries plus warmup, long, and switching
+   requests): `rtol=1e-4`, `atol=1e-5`, minimum cosine 0.999999, identical ordered
+   retrieval results, and stable language switches. Also require original FP32
+   rankings to reproduce the saved full-precision reference. Stop before
+   quantization if any check fails.
+3. Quantize the preprocessed copy using the original per-tensor QUInt8
+   MatMul/Gather settings. Recheck memory, latency, and each language's nDCG@8
+   against the saved full-precision reference. Audit graph operators and actual
+   quantized Gather/matrix presence; a marker alone is not proof of conversion.
+
+Preparation/graph inspection never enters the measured processes. Only the two
+FP32 diagnostic runs retain raw arrays; uint8 memory measurements use the previous
+unchanged measurement harness. Each run creates a new directory and verifies
+original source checksums again at the end. Failures retain a partial report and
+their logs; existing reports, models, SQLite stores, and indexes are not overwritten.
+
+The full tiny synthetic pipeline passed locally with ONNX Runtime 1.31.0, including
+the 512-token and switching schedule. A deliberately changed FP32 output failed
+the numerical gate. These are harness checks, not evidence that E5 quality improves.
+The real model still needs the Colab run below. The 192 queries are reused
+development data, not an independent holdout, and process RSS is not a serving
+container/concurrency guarantee. No runtime defaults, cloud artifacts, or serving
+code change in this slice.
+
+Keep the restored Colab session. Add this cell, not a full notebook rerun. Upload
+these three local helpers when prompted:
+
+- `scripts/check_onnx_preprocessing.py` (new)
+- `scripts/check_quantization_quality.py` (unchanged dependency)
+- `scripts/check_inference_memory.py` (unchanged dependency)
+
+The other three tokenizer/disk helpers were restored into `/content` already.
+Renamed uploads such as `name (1).py` are accepted by checksum. No token, dataset
+upload, model download, or dependency installation is needed.
+
+```python
+from google.colab import files
+from pathlib import Path
+import hashlib, os, sys
+
+if "WORK" not in globals() or not Path(WORK).is_dir():
+    raise RuntimeError("The restored runtime is missing. Stop here; do not rebuild.")
+if "child_env" not in globals() or "run_logged" not in globals():
+    raise RuntimeError("Use the session with the completed checkpoint-restore cell.")
+os.chdir("/content")
+uploaded = files.upload()
+main_hash = "7455432697b4d92b1bafa55eec0273cceb5d56f7efdeb0f33496d8c65f8b4741"
+expected = {
+    main_hash,
+    "5c4df33a42d92fcd1aa796506c88c5de5b71b6769047051d45994dde74d34775",
+    "cf88c2b249e519c1023c04b16243d9bbcf2d68198607b80a4798017449738389",
+}
+by_hash = {hashlib.sha256(data).hexdigest(): name for name, data in uploaded.items()}
+if len(uploaded) != 3 or set(by_hash) != expected:
+    raise ValueError("Select exactly the three helper files listed above, using their latest local copies.")
+script = by_hash[main_hash]
+del uploaded
+before = set(WORK.glob("onnx-preprocessing-*/onnx-preprocessing-report.json"))
+try:
+    run_logged([sys.executable, "-u", script, "--work", str(WORK)], env=child_env)
+finally:
+    reports = set(WORK.glob("onnx-preprocessing-*/onnx-preprocessing-report.json")) - before
+    if len(reports) == 1:
+        files.download(str(reports.pop()))
+```
+
+Share `onnx-preprocessing-report.json` and any errors printed above it. Keep the
+runtime open. Even a passing screen does not automatically select or deploy the
+candidate; independent quality and memory-limited serving checks remain necessary.
