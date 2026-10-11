@@ -101,10 +101,10 @@ The authenticated Hub metadata check confirmed the private repository and commit
 The compact release is deployed at `https://subarag.onrender.com`. Its public
 health check returns 200, unauthenticated status access returns 401, and the
 authenticated status reports transcription, RAG, and data as ready. This proves
-that the verified runtime can complete cold startup on the free instance; live
-answer generation and voice-to-answer checks remain part of release validation.
-If a later change exceeds the 512 MiB limit, restore this deploy rather than
-selecting a paid plan.
+that the verified runtime can complete cold startup on the free instance. The
+user also verified grounded typed and voice answers, rendered citations, and a
+Marathi language switch on the hosted application. If a later change exceeds the
+512 MiB limit, restore this deploy rather than selecting a paid plan.
 
 The compact artifact is pinned separately to private repository
 `silentkirmada/SubaRAG-data`, revision

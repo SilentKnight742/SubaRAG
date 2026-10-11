@@ -23,8 +23,10 @@ An opt-in [compact portfolio runtime](docs/portfolio-runtime.md) now connects th
 tested ONNX encoder, disk-backed passages, and one language index at a time to
 the same answer API. Its accepted private artifact can be fetched only from a
 pinned commit and content-addressed path. Fresh-query retrieval validation has
-passed; real-answer and hosting-limit validation are still pending. The live
-preview is not changed automatically.
+passed, and real-answer validation recorded grounded English and Marathi answers
+plus conservative Hindi `no_answer` behavior. The compact runtime is deployed on
+[Render Free](https://subarag.onrender.com), where typed, voice, citation, and
+language-switching checks pass.
 
 Data preparation runs remotely using the [Colab notebook](notebooks/prepare_data.ipynb)
 and [data guide](docs/data.md). It produces a versioned passage corpus and
@@ -67,6 +69,10 @@ Grounded answers require `SUBARAG_RETRIEVAL_MANIFEST_EN`,
 prebuilt serving manifests. Configure all three together. The backend verifies
 their checksums and embedding model before reporting RAG as ready; it never
 embeds the corpus during startup.
+Alternatively, the compact runtime accepts a local `SUBARAG_COMPACT_MANIFEST` or
+the pinned `SUBARAG_COMPACT_REPO`, `SUBARAG_COMPACT_REVISION`, and
+`SUBARAG_COMPACT_PATH` settings described in the hosting guide. Do not configure
+the full and compact runtimes together.
 Build the pinned pilot's English/Hindi/Marathi indexes remotely with the
 [Colab serving-index guide](docs/rag-indexes.md) and
 [notebook](notebooks/build_rag_indexes.ipynb). Index preparation does not enable
@@ -96,8 +102,8 @@ npm test
 npm run build
 ```
 
-See [hosting instructions](docs/hosting.md) for the password-protected Render Free preview.
-The default Docker image downloads the pinned prepared corpus using a read-only
-`HF_TOKEN`, verifies it, and keeps RAG unavailable. It does not install or load
-embedding models. The optional `rag` Docker target is reserved for the next stage.
-Publishing and deployment are separate, explicitly authorized actions.
+See [hosting instructions](docs/hosting.md) for the password-protected Render Free
+deployment. The default release image downloads the pinned prepared corpus and
+compact serving bundle using a read-only `HF_TOKEN`, verifies both, and loads one
+language index at a time. The lightweight `preview` and full-size experimental
+`rag` Docker targets remain explicit alternatives.

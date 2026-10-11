@@ -131,10 +131,10 @@ rather than hidden or tuned against the tiny sample.
 
 The compact release completed cold startup on Render Free and reports both RAG
 and data ready. Public health returns 200 and the authenticated application
-status is protected from anonymous access. The remaining hosted checks are real
-typed and voice queries, including answer generation and a language change;
-those operations can have a higher transient memory peak than idle startup. If
-the free instance fails under that load, roll back instead of upgrading.
+status is protected from anonymous access. Hosted typed and voice queries,
+citations, and a Marathi language switch were then verified successfully. This
+completes the scoped release gate; future changes that exceed the free instance
+limit should be rolled back instead of prompting a paid upgrade.
 
 No more model tuning unless hosted validation exposes a concrete blocker.
 
