@@ -35,16 +35,18 @@ def write(path: Path, value) -> None:
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n")
 
 
-def select_supported_cases(root: Path):
+def select_supported_cases(root: Path, retriever):
     fresh = read(root / "fresh-cases.json")
-    rankings = read(root / "compact.json")["rankings"]
     selected = []
     for language in LANGUAGES:
         candidates = []
         for case in fresh:
             if case["language"] != language:
                 continue
-            ranking = rankings[language + ":" + case["id"]]
+            ranking = [
+                hit.document.id
+                for hit in retriever.retrieve(case["query"], language).hits
+            ]
             relevant = set(case["relevant"])
             if not relevant.intersection(ranking):
                 continue
@@ -69,7 +71,6 @@ async def run(serving_report: Path, output: Path) -> None:
     bundle_manifest = Path(serving["bundle_manifest"])
     if not bundle_manifest.is_file():
         raise ValueError("The verified compact bundle is missing")
-    cases = select_supported_cases(root) + [UNSUPPORTED]
     application = create_app(settings=Settings(
         _env_file=None,
         elevenlabs_api_key="unused-in-answer-check",
@@ -80,6 +81,7 @@ async def run(serving_report: Path, output: Path) -> None:
     api_key = None
     results = []
     async with application.router.lifespan_context(application):
+        cases = select_supported_cases(root, application.state.rag_engine.retriever) + [UNSUPPORTED]
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=application), base_url="http://test",
         ) as client:
@@ -130,7 +132,7 @@ async def run(serving_report: Path, output: Path) -> None:
             "No-answer behavior is appropriate for the fictional-star question.",
         ],
         "results": results,
-        "limitations": "Six same-corpus labeled questions and one synthetic unsupported question; not a broad answer benchmark.",
+        "limitations": "Six same-corpus labeled questions selected after retrieval and one synthetic unsupported question; not a broad answer benchmark.",
     }
     output.mkdir(parents=True, exist_ok=True)
     report_path = output / "compact-answer-report.json"

@@ -133,8 +133,8 @@ No more model tuning unless one of these checks exposes a concrete blocker.
 
 ### Real-answer check
 
-`scripts/check_compact_answers.py` selects two fresh cases per language whose
-saved compact top eight contains labeled evidence, then sends them through the
+`scripts/check_compact_answers.py` uses the verified serving retriever to select
+two fresh cases per language whose top eight contains labeled evidence, then sends them through the
 real `/api/queries` application boundary. A seventh fictional-star question
 checks strict no-answer behavior. The helper records answers and server-owned
 citation text for manual review; six same-corpus questions are not a broad
