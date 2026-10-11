@@ -98,11 +98,13 @@ Alternatively, use `SUBARAG_DATA_MANIFEST` for a local prepared artifact. Do not
 configure both sources. Without either, data remains `not_configured`.
 
 The authenticated Hub metadata check confirmed the private repository and commit.
-The earlier interface-only build is deployed at `https://subarag.onrender.com`:
-health returned 200, unauthenticated status returned 401, and the user verified
-authenticated data readiness and the voice-to-transcript loop. Replacing that
-build with the compact release is the final free-hosting gate. If startup exceeds
-the 512 MiB limit, restore the earlier Render deploy; do not select a paid plan.
+The compact release is deployed at `https://subarag.onrender.com`. Its public
+health check returns 200, unauthenticated status access returns 401, and the
+authenticated status reports transcription, RAG, and data as ready. This proves
+that the verified runtime can complete cold startup on the free instance; live
+answer generation and voice-to-answer checks remain part of release validation.
+If a later change exceeds the 512 MiB limit, restore this deploy rather than
+selecting a paid plan.
 
 The compact artifact is pinned separately to private repository
 `silentkirmada/SubaRAG-data`, revision

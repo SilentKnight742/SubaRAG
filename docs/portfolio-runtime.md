@@ -129,11 +129,12 @@ appearing in their top-eight retrieval results. A targeted semantic prompt retry
 produced the same safe result, so this is recorded as a known quality limitation
 rather than hidden or tuned against the tiny sample.
 
-The remaining gate is the complete service under Render's actual 512 MiB limit,
-including cold startup, transcription, answer generation, long queries, and
-language changes. Colab peak process RSS of roughly 396 MiB is encouraging but
-does not prove the hosted fit. If the free instance cannot start, roll back the
-deployment instead of upgrading.
+The compact release completed cold startup on Render Free and reports both RAG
+and data ready. Public health returns 200 and the authenticated application
+status is protected from anonymous access. The remaining hosted checks are real
+typed and voice queries, including answer generation and a language change;
+those operations can have a higher transient memory peak than idle startup. If
+the free instance fails under that load, roll back instead of upgrading.
 
 No more model tuning unless hosted validation exposes a concrete blocker.
 
