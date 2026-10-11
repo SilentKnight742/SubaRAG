@@ -44,5 +44,9 @@ RUN pip install --no-cache-dir '/app/backend[compact]'
 USER 1000
 ENV HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 TOKENIZERS_PARALLELISM=false
 
-# Default build target, including on Render.
+# Lightweight local/debug target.
 FROM runtime AS preview
+
+# Render builds the final stage when no target is specified. Keep `preview`
+# addressable while shipping the compact RAG runtime by default.
+FROM compact AS release

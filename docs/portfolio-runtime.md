@@ -13,8 +13,8 @@ checks responsive. The API admits one question at a time and also rejects new
 questions while cancelled/timed-out native retrieval is still finishing. It
 returns the existing grounded-answer contract with server-resolved citations.
 
-No default hosting configuration changes. No push or deployment is performed by
-this slice.
+The release image and Render Blueprint now select this compact runtime. The
+lightweight preview remains an explicit Docker target for debugging and rollback.
 
 The accepted bundle is stored privately and immutably at:
 
@@ -27,7 +27,7 @@ Remote startup downloads into a temporary cache directory, verifies the
 content-addressed manifest and every declared file, and only then atomically
 publishes the cache. It never loads a partial download.
 
-Local verification: all 133 existing backend tests passed. A tiny synthetic
+Local verification: all 135 backend tests passed. A tiny synthetic
 bundle exercised checksum verification, concurrent language changes, the real
 query endpoint with mocked generation, citation resolution, busy/timeout
 handling, health checks, cleanup, and the fresh-query measurement helper. This
@@ -114,22 +114,28 @@ the immutable values above. Remote loading additionally requires a read-only
 configuration. The usual transcription credentials and preview protection still
 apply. Do not copy model artifacts to a machine that cannot accommodate them.
 
-The optional Docker target is `compact`; the default remains `preview`. Use one
-application worker. A local bundle may be mounted read-only; the pinned remote
-mode downloads it once into the verified cache. The image never rebuilds the
-embedding model.
+The optional Docker target is `compact`, and the final `release` target inherits
+it for hosts that cannot select a build target. Use one application worker. A
+local bundle may be mounted read-only; the pinned remote mode downloads it once
+into the verified cache. The image never rebuilds the embedding model.
 
-## Remaining before release
+## Release evidence and remaining gate
 
-1. Review the fresh-query report for practical regressions and runtime parity.
-2. Exercise real generated answers and citations in all three languages,
-   including unsupported questions, using the free provider allowance.
-3. Check the complete service under the actual hosting memory limit, including
-   startup, transcription, answer generation, long queries, and language changes.
-   Colab process RSS below 400 MiB is only a screen, not proof of a 512 MiB fit.
-4. After the checks pass, seek explicit push/deployment approval.
+The fresh-query, compact-serving, and real-answer checks are complete. English
+and Marathi each answered both selected evidence-backed questions with relevant
+citations. The fictional unsupported control correctly returned `no_answer`.
+Both Hindi probes conservatively returned `no_answer` despite relevant material
+appearing in their top-eight retrieval results. A targeted semantic prompt retry
+produced the same safe result, so this is recorded as a known quality limitation
+rather than hidden or tuned against the tiny sample.
 
-No more model tuning unless one of these checks exposes a concrete blocker.
+The remaining gate is the complete service under Render's actual 512 MiB limit,
+including cold startup, transcription, answer generation, long queries, and
+language changes. Colab peak process RSS of roughly 396 MiB is encouraging but
+does not prove the hosted fit. If the free instance cannot start, roll back the
+deployment instead of upgrading.
+
+No more model tuning unless hosted validation exposes a concrete blocker.
 
 ### Real-answer check
 
