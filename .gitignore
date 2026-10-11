@@ -1,0 +1,22 @@
+# Dependencies and build output
+node_modules/
+dist/
+coverage/
+artifacts/
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+
+# Python environments and caches
+.venv/
+.cache/
+__pycache__/
+.pytest_cache/
+
+# Editor and operating-system files
+.DS_Store
+.idea/
+.vscode/
+*.swp

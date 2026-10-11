@@ -1,0 +1,63 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "subarag-backend"
+version = "0.1.0"
+description = "Provider-neutral services for SubaRAG"
+requires-python = ">=3.11"
+dependencies = [
+    "av>=18,<19",
+    "fastapi>=0.116,<1",
+    "httpx>=0.28,<1",
+    "pydantic-settings>=2.10,<3",
+    "python-multipart>=0.0.20,<1",
+    "uvicorn>=0.35,<1",
+]
+
+[project.optional-dependencies]
+dev = ["bm25s>=0.3.12,<0.4", "pytest>=8.4,<10"]
+compact = [
+    "faiss-cpu>=1.15,<2",
+    "numpy>=2,<3",
+    "onnxruntime>=1.22,<2",
+    "tokenizers>=0.21,<1",
+    "marisa-trie>=1.4,<2",
+]
+data = ["pyarrow>=21,<26", "fsspec[http]>=2025.3,<2027"]
+rag = [
+    "bm25s>=0.3.12,<0.4",
+    "faiss-cpu>=1.15,<2",
+    "numpy>=2,<3",
+    "sentence-transformers>=6,<7",
+]
+experiments = [
+    "bm25s>=0.3.12,<0.4",
+    "pyarrow>=21,<26",
+    "fsspec[http]>=2025.3,<2027",
+    "faiss-cpu>=1.15,<2",
+    "numpy>=2,<3",
+    "psutil>=7,<8",
+    "sentence-transformers>=6,<7",
+]
+generation = [
+    "psutil>=7,<8",
+    "torch>=2.8,<3",
+    "transformers>=5,<6",
+]
+
+[project.scripts]
+subarag-benchmark = "subarag.experiments.retrieval:main"
+subarag-build-index = "subarag.experiments.build_index:main"
+subarag-generator-benchmark = "subarag.experiments.generation:main"
+subarag-hosted-generator-benchmark = "subarag.experiments.hosted_generation:main"
+subarag-rerank-benchmark = "subarag.experiments.reranking:main"
+
+[tool.pytest.ini_options]
+addopts = "-q -p no:cacheprovider"
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.setuptools.packages.find]
+where = ["src"]

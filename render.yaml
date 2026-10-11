@@ -1,0 +1,35 @@
+services:
+  - type: web
+    name: subarag
+    runtime: docker
+    plan: free
+    region: singapore
+    branch: main
+    dockerfilePath: ./Dockerfile
+    autoDeployTrigger: "off"
+    healthCheckPath: /healthz
+    envVars:
+      - key: PORT
+        value: "7860"
+      - key: ELEVENLABS_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: HF_TOKEN
+        sync: false
+      - key: SUBARAG_DATA_REPO
+        value: silentkirmada/SubaRAG-data
+      - key: SUBARAG_DATA_REVISION
+        value: e29f5c990a4fc0d8e05771be4007f1c6560adfc2
+      - key: SUBARAG_COMPACT_REPO
+        value: silentkirmada/SubaRAG-data
+      - key: SUBARAG_COMPACT_REVISION
+        value: 3f0ef0a35e7fd2cf733c6ff6e1ac9a9e49a539d6
+      - key: SUBARAG_COMPACT_PATH
+        value: serving/compact/27cb87a265d9058a4c512d138519bfd9060c156bf1abef1a24a07919bcc36115
+      - key: SUBARAG_TRANSCRIPTION_PROVIDER
+        value: elevenlabs
+      - key: SUBARAG_ALLOW_PROVIDER_SELECTION
+        value: "false"
+      - key: SUBARAG_PREVIEW_PASSWORD
+        generateValue: true
