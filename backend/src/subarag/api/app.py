@@ -33,6 +33,7 @@ from ..transcription import (
 )
 from ..data.manifest import load_manifest
 from ..retrieval.remote import fetch_retrieval_bundle
+from ..retrieval.compact_remote import fetch_compact_bundle
 from ..data.remote import fetch_prepared_corpus
 from ..rag import (
     RagEngine,
@@ -411,10 +412,19 @@ def create_app(
                     )
 
                 active_engine = rag_engine
-                if active_engine is None and runtime_settings.compact_manifest is not None:
+                compact_manifest = runtime_settings.compact_manifest
+                if active_engine is None and runtime_settings.compact_repo is not None:
+                    compact_manifest = await fetch_compact_bundle(
+                        repo_id=runtime_settings.compact_repo,
+                        revision=runtime_settings.compact_revision,
+                        path=runtime_settings.compact_path,
+                        token=runtime_settings.hf_token.get_secret_value(),
+                        cache_dir=runtime_settings.compact_cache_dir,
+                    )
+                if active_engine is None and compact_manifest is not None:
                     generation_client = await stack.enter_async_context(generation_client_factory())
                     active_engine = build_compact_rag_engine(
-                        compact_manifest=runtime_settings.compact_manifest,
+                        compact_manifest=compact_manifest,
                         gemini_api_key=runtime_settings.gemini_api_key.get_secret_value(),
                         generation_client=generation_client,
                         gemini_model=runtime_settings.gemini_model,

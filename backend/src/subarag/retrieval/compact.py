@@ -17,30 +17,55 @@ from .onnx_embedding import OnnxQueryEmbedder, file_sha256
 
 LANGUAGES = ("en", "hi", "mr")
 MODEL = "intfloat/multilingual-e5-small"
+MAX_MANIFEST_BYTES = 1024 * 1024
+MAX_FILE_BYTES = 256 * 1024 * 1024
+MAX_BUNDLE_BYTES = 384 * 1024 * 1024
 FILES = {"encoder/" + name for name in ("model.onnx", "tokenizer.json", "embedding-manifest.json")} | {
     "tokenizer/" + name for name in ("float64-manifest.json", "vocabulary.marisa", "scores.bin", "pipeline.json")
 } | {f"{lang}/{name}" for lang in LANGUAGES for name in ("index.faiss", "documents.sqlite")}
 
 
-def verify_compact_bundle(path: Path):
+def load_compact_bundle_manifest(path: Path):
     path = Path(path).resolve()
-    if path.stat().st_size > 1024 * 1024:
+    if path.stat().st_size > MAX_MANIFEST_BYTES:
         raise ValueError("Compact bundle manifest is too large")
     metadata = json.loads(path.read_text())
-    if (metadata.get("schema_version") != 1 or metadata.get("artifact_kind") != "subarag_compact_bundle"
+    if (not isinstance(metadata, dict) or set(metadata) != {
+            "schema_version", "artifact_kind", "model_name", "model_revision", "dimension",
+            "languages", "provisional", "quality_note", "source_preprocessing_report_sha256", "files",
+        } or metadata.get("schema_version") != 1 or metadata.get("artifact_kind") != "subarag_compact_bundle"
             or metadata.get("model_name") != MODEL or metadata.get("dimension") != 384
             or not re.fullmatch(r"[0-9a-f]{40}", metadata.get("model_revision", ""))
+            or metadata.get("provisional") is not True
+            or not isinstance(metadata.get("quality_note"), str)
+            or not re.fullmatch(r"[0-9a-f]{64}", metadata.get("source_preprocessing_report_sha256", ""))
+            or not isinstance(metadata.get("files"), dict)
+            or not isinstance(metadata.get("languages"), dict)
             or set(metadata.get("files", {})) != FILES or set(metadata.get("languages", {})) != set(LANGUAGES)):
         raise ValueError("Incompatible compact serving bundle")
+    for name, item in metadata["files"].items():
+        if (not isinstance(item, dict) or set(item) != {"bytes", "sha256"}
+                or type(item["bytes"]) is not int or not 0 < item["bytes"] <= MAX_FILE_BYTES
+                or not isinstance(item["sha256"], str) or not re.fullmatch(r"[0-9a-f]{64}", item["sha256"])):
+            raise ValueError("Invalid compact file metadata")
+    if sum(item["bytes"] for item in metadata["files"].values()) > MAX_BUNDLE_BYTES:
+        raise ValueError("Compact serving bundle is too large")
+    for item in metadata["languages"].values():
+        if (not isinstance(item, dict) or set(item) != {"documents", "corpus_version"}
+                or type(item["documents"]) is not int or item["documents"] < 1
+                or not isinstance(item["corpus_version"], str) or not item["corpus_version"]):
+            raise ValueError("Invalid compact language metadata")
+    return metadata
+
+
+def verify_compact_bundle(path: Path):
+    path = Path(path).resolve()
+    metadata = load_compact_bundle_manifest(path)
     for name, item in metadata["files"].items():
         target = (path.parent / name).resolve()
         if (not target.is_relative_to(path.parent) or target.stat().st_size != item["bytes"]
                 or file_sha256(target) != item["sha256"]):
             raise ValueError("Compact serving file checksum mismatch")
-    for item in metadata["languages"].values():
-        if (not isinstance(item.get("documents"), int) or item["documents"] < 1
-                or not isinstance(item.get("corpus_version"), str)):
-            raise ValueError("Invalid compact language metadata")
     return metadata
 
 

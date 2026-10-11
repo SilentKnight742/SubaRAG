@@ -90,6 +90,21 @@ class Settings(BaseSettings):
         validation_alias="SUBARAG_RETRIEVAL_CACHE_DIR",
     )
     compact_manifest: Path | None = Field(default=None, validation_alias="SUBARAG_COMPACT_MANIFEST")
+    compact_repo: str | None = Field(
+        default=None, validation_alias="SUBARAG_COMPACT_REPO",
+        pattern=r"^[A-Za-z0-9_-]+/[A-Za-z0-9_.-]+$",
+    )
+    compact_revision: str | None = Field(
+        default=None, validation_alias="SUBARAG_COMPACT_REVISION", pattern=r"^[0-9a-f]{40}$",
+    )
+    compact_path: str | None = Field(
+        default=None, validation_alias="SUBARAG_COMPACT_PATH",
+        pattern=r"^serving/compact/[0-9a-f]{64}$",
+    )
+    compact_cache_dir: Path = Field(
+        default=BACKEND_ROOT / ".cache" / "compact",
+        validation_alias="SUBARAG_COMPACT_CACHE_DIR",
+    )
     preview_password: SecretStr | None = Field(
         default=None,
         validation_alias="SUBARAG_PREVIEW_PASSWORD",
@@ -138,9 +153,17 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def complete_compact_configuration(self) -> "Settings":
-        if self.compact_manifest is not None:
+        remote = (self.compact_repo, self.compact_revision, self.compact_path)
+        if any(value is not None for value in remote) and any(value is None for value in remote):
+            raise ValueError("Set compact repository, revision, and path together")
+        compact = self.compact_manifest is not None or self.compact_repo is not None
+        if compact:
             if self.gemini_api_key is None:
                 raise ValueError("Compact RAG requires GEMINI_API_KEY")
+            if self.compact_manifest is not None and self.compact_repo is not None:
+                raise ValueError("Choose a local compact manifest or remote compact bundle, not both")
+            if self.compact_repo is not None and self.hf_token is None:
+                raise ValueError("Remote compact RAG requires HF_TOKEN")
             if self.retrieval_repo is not None or any(path is not None for path in (
                 self.retrieval_manifest_en, self.retrieval_manifest_hi, self.retrieval_manifest_mr,
             )):

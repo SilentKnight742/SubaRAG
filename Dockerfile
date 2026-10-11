@@ -11,6 +11,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     HF_HOME=/app/.cache/huggingface \
     SUBARAG_DATA_CACHE_DIR=/app/.cache/corpus \
     SUBARAG_RETRIEVAL_CACHE_DIR=/app/.cache/retrieval \
+    SUBARAG_COMPACT_CACHE_DIR=/app/.cache/compact \
     SUBARAG_FRONTEND_DIST=/app/frontend/dist \
     SUBARAG_TRANSCRIPTION_PROVIDER=elevenlabs \
     SUBARAG_ALLOW_PROVIDER_SELECTION=false

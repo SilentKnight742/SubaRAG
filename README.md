@@ -21,8 +21,10 @@ remaining end-to-end release gate.
 
 An opt-in [compact portfolio runtime](docs/portfolio-runtime.md) now connects the
 tested ONNX encoder, disk-backed passages, and one language index at a time to
-the same answer API. Fresh-query, real-answer, and hosting-limit validation are
-still pending; the live preview is not changed automatically.
+the same answer API. Its accepted private artifact can be fetched only from a
+pinned commit and content-addressed path. Fresh-query retrieval validation has
+passed; real-answer and hosting-limit validation are still pending. The live
+preview is not changed automatically.
 
 Data preparation runs remotely using the [Colab notebook](notebooks/prepare_data.ipynb)
 and [data guide](docs/data.md). It produces a versioned passage corpus and

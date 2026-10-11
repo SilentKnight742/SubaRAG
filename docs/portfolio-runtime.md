@@ -13,8 +13,19 @@ checks responsive. The API admits one question at a time and also rejects new
 questions while cancelled/timed-out native retrieval is still finishing. It
 returns the existing grounded-answer contract with server-resolved citations.
 
-No default hosting configuration changes. No upload, push, or deployment is
-performed by this slice.
+No default hosting configuration changes. No push or deployment is performed by
+this slice.
+
+The accepted bundle is stored privately and immutably at:
+
+- repository: `silentkirmada/SubaRAG-data`
+- revision: `3f0ef0a35e7fd2cf733c6ff6e1ac9a9e49a539d6`
+- path: `serving/compact/27cb87a265d9058a4c512d138519bfd9060c156bf1abef1a24a07919bcc36115`
+- downloaded delivery SHA-256: `1ea5cfd101c10013ec6bbf6f56942ac2252fad6bf56694b3bd5809c48d853d02`
+
+Remote startup downloads into a temporary cache directory, verifies the
+content-addressed manifest and every declared file, and only then atomically
+publishes the cache. It never loads a partial download.
 
 Local verification: all 133 existing backend tests passed. A tiny synthetic
 bundle exercised checksum verification, concurrent language changes, the real
@@ -95,16 +106,18 @@ this is not an independently curated benchmark.
 
 ## Opt-in application configuration
 
-For an artifact-capable validation machine, install `backend[compact]`, set
-`SUBARAG_COMPACT_MANIFEST` to the packaged `bundle/compact-bundle.json`, and supply
-`GEMINI_API_KEY` privately. Remove full-size retrieval configuration. The usual
-transcription credentials and preview protection still apply. Do not copy model
-artifacts to a machine that cannot accommodate them.
+For an artifact-capable validation machine, install `backend[compact]` and either
+set `SUBARAG_COMPACT_MANIFEST` to a local `bundle/compact-bundle.json`, or set
+`SUBARAG_COMPACT_REPO`, `SUBARAG_COMPACT_REVISION`, and `SUBARAG_COMPACT_PATH` to
+the immutable values above. Remote loading additionally requires a read-only
+`HF_TOKEN`; both modes require `GEMINI_API_KEY`. Remove full-size retrieval
+configuration. The usual transcription credentials and preview protection still
+apply. Do not copy model artifacts to a machine that cannot accommodate them.
 
-The optional Docker target is `compact`; the default remains `preview`. Mount
-the bundle read-only and use one application worker. The compact image never
-downloads or rebuilds the embedding model. Remote compact-bundle fetching is
-not implemented in this slice.
+The optional Docker target is `compact`; the default remains `preview`. Use one
+application worker. A local bundle may be mounted read-only; the pinned remote
+mode downloads it once into the verified cache. The image never rebuilds the
+embedding model.
 
 ## Remaining before release
 
@@ -114,7 +127,6 @@ not implemented in this slice.
 3. Check the complete service under the actual hosting memory limit, including
    startup, transcription, answer generation, long queries, and language changes.
    Colab process RSS below 400 MiB is only a screen, not proof of a 512 MiB fit.
-4. Preserve/upload the accepted bundle to the private artifact repository and
-   connect pinned artifact loading, then seek explicit push/deployment approval.
+4. After the checks pass, seek explicit push/deployment approval.
 
 No more model tuning unless one of these checks exposes a concrete blocker.

@@ -30,6 +30,23 @@ def test_settings_mask_provider_credentials() -> None:
     assert "gemini-secret" not in rendered
 
 
+def test_remote_compact_configuration_is_complete_and_exclusive() -> None:
+    common = dict(
+        _env_file=None,
+        hf_token="hf-secret",
+        gemini_api_key="gemini-secret",
+        compact_repo="silentkirmada/SubaRAG-data",
+        compact_revision="3f0ef0a35e7fd2cf733c6ff6e1ac9a9e49a539d6",
+        compact_path="serving/compact/" + "a" * 64,
+    )
+    settings = Settings(**common)
+    assert settings.compact_repo == "silentkirmada/SubaRAG-data"
+    with pytest.raises(ValidationError):
+        Settings(**{**common, "hf_token": None})
+    with pytest.raises(ValidationError):
+        Settings(**{**common, "compact_manifest": Path("/bundle/compact-bundle.json")})
+
+
 def test_lifespan_builds_providers_and_closes_shared_client() -> None:
     client = httpx.AsyncClient(transport=httpx.MockTransport(lambda _request: None))
     application = create_app(
