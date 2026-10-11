@@ -4,7 +4,7 @@ services:
     runtime: docker
     plan: free
     region: singapore
-    branch: feature/compact-rag-serving
+    branch: main
     dockerfilePath: ./Dockerfile
     autoDeployTrigger: "off"
     healthCheckPath: /healthz

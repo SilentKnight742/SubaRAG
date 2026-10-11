@@ -8,8 +8,8 @@ No paid Space, GPU, database, disk, or background worker is needed for this slic
 
 1. Sign in to [Render](https://dashboard.render.com/) with GitHub. Do not add a
    payment method or select a paid plan. Stop if a payment is requested.
-2. Publish `feature/compact-rag-serving`. For the existing `subarag` service,
-   change its source branch to that branch. A new service can instead use the
+2. Merge the reviewed release into `main`. For the existing `subarag` service,
+   change its source branch to `main`. A new service can instead use the stable
    branch's `render.yaml` Blueprint.
 3. Supply `ELEVENLABS_API_KEY`, `GEMINI_API_KEY`, and the dataset-scoped
    read-only `HF_TOKEN` in Render's secret prompts, never in source code.
