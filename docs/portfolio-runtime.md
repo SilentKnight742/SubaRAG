@@ -140,3 +140,5 @@ checks strict no-answer behavior. The helper records answers and server-owned
 citation text for manual review; six same-corpus questions are not a broad
 answer-quality benchmark. It reads `GEMINI_API_KEY` from the child environment,
 removes it immediately, and never writes it to the report.
+Use `--languages hi` for the targeted Hindi retry after the semantic-match
+prompt correction; the unsupported control remains included.

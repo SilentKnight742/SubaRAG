@@ -35,10 +35,10 @@ def write(path: Path, value) -> None:
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n")
 
 
-def select_supported_cases(root: Path, retriever):
+def select_supported_cases(root: Path, retriever, languages=LANGUAGES):
     fresh = read(root / "fresh-cases.json")
     selected = []
-    for language in LANGUAGES:
+    for language in languages:
         candidates = []
         for case in fresh:
             if case["language"] != language:
@@ -59,7 +59,7 @@ def select_supported_cases(root: Path, retriever):
     return selected
 
 
-async def run(serving_report: Path, output: Path) -> None:
+async def run(serving_report: Path, output: Path, languages=LANGUAGES) -> None:
     from subarag.api.app import create_app
     from subarag.api.settings import Settings
 
@@ -81,7 +81,7 @@ async def run(serving_report: Path, output: Path) -> None:
     api_key = None
     results = []
     async with application.router.lifespan_context(application):
-        cases = select_supported_cases(root, application.state.rag_engine.retriever) + [UNSUPPORTED]
+        cases = select_supported_cases(root, application.state.rag_engine.retriever, languages) + [UNSUPPORTED]
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=application), base_url="http://test",
         ) as client:
@@ -124,6 +124,7 @@ async def run(serving_report: Path, output: Path) -> None:
         "serving_report": str(serving_report),
         "bundle_manifest_sha256": serving["bundle_manifest_sha256"],
         "model": "gemini-3.5-flash-lite",
+        "languages": list(languages),
         "requests": len(results),
         "automatic_contract_passed": all(item["automatic_contract_passed"] for item in results),
         "manual_review_required": [
@@ -132,7 +133,7 @@ async def run(serving_report: Path, output: Path) -> None:
             "No-answer behavior is appropriate for the fictional-star question.",
         ],
         "results": results,
-        "limitations": "Six same-corpus labeled questions selected after retrieval and one synthetic unsupported question; not a broad answer benchmark.",
+        "limitations": f"{len(languages) * 2} same-corpus labeled questions selected after retrieval and one synthetic unsupported question; not a broad answer benchmark.",
     }
     output.mkdir(parents=True, exist_ok=True)
     report_path = output / "compact-answer-report.json"
@@ -146,6 +147,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--serving-report", type=Path, required=True)
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--languages", nargs="+", choices=LANGUAGES, default=LANGUAGES)
     args = parser.parse_args()
     destination = args.output or Path(mkdtemp(prefix="subarag-answer-check-", dir="/content"))
-    asyncio.run(run(args.serving_report.resolve(), destination.resolve()))
+    asyncio.run(run(args.serving_report.resolve(), destination.resolve(), tuple(dict.fromkeys(args.languages))))
