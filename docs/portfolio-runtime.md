@@ -130,3 +130,13 @@ embedding model.
 4. After the checks pass, seek explicit push/deployment approval.
 
 No more model tuning unless one of these checks exposes a concrete blocker.
+
+### Real-answer check
+
+`scripts/check_compact_answers.py` selects two fresh cases per language whose
+saved compact top eight contains labeled evidence, then sends them through the
+real `/api/queries` application boundary. A seventh fictional-star question
+checks strict no-answer behavior. The helper records answers and server-owned
+citation text for manual review; six same-corpus questions are not a broad
+answer-quality benchmark. It reads `GEMINI_API_KEY` from the child environment,
+removes it immediately, and never writes it to the report.
